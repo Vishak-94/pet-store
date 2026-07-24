@@ -23,6 +23,10 @@ import java.util.UUID;
 @RestController
 public class AccountController {
 
+    /** Legacy UserEJB limits (MAX_USERID_LENGTH / MAX_PASSWD_LENGTH) preserved on the write path. */
+    private static final int MAX_USERID_LENGTH = 25;
+    private static final int MAX_PASSWD_LENGTH = 25;
+
     private final AccountRepository accounts;
     private final PasswordEncoder encoder;
 
@@ -38,6 +42,11 @@ public class AccountController {
     public ResponseEntity<Map<String, String>> provision(@RequestBody ProvisionRequest req) {
         if (req.userName() == null || req.userName().isBlank()
                 || req.password() == null || req.password().length() < 1) {
+            return ResponseEntity.badRequest().body(Map.of("error", "invalid_request"));
+        }
+        if (req.userName().length() > MAX_USERID_LENGTH
+                || req.password().length() > MAX_PASSWD_LENGTH
+                || req.userName().indexOf('%') != -1 || req.userName().indexOf('*') != -1) {
             return ResponseEntity.badRequest().body(Map.of("error", "invalid_request"));
         }
         if (accounts.existsById(req.userName())) {

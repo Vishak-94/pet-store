@@ -34,6 +34,7 @@ class CustomerEntity {
     @Column(name = "state") String state;
     @Column(name = "zip_code") String zipCode;
     @Column(name = "country") String country;
+    @Column(name = "status") String status;
 
     // profile
     @Column(name = "preferred_language") String preferredLanguage;
@@ -64,6 +65,7 @@ class CustomerEntity {
             e.state = a.getState();
             e.zipCode = a.getZipCode();
             e.country = a.getCountry();
+            e.status = a.getStatus();
         }
         Profile p = c.getProfile() == null ? Profile.defaults() : c.getProfile();
         e.preferredLanguage = p.getPreferredLanguage();
@@ -81,7 +83,8 @@ class CustomerEntity {
 
     Customer toDomain() {
         Account a = new Account(givenName, familyName, email, telephone,
-                streetName1, streetName2, city, state, zipCode, country);
+                streetName1, streetName2, city, state, zipCode, country,
+                status == null ? Account.ACTIVE : status);
         Profile p = new Profile(preferredLanguage, favoriteCategory,
                 myListPreference, bannerPreference);
         CreditCard cc = (cardNumber == null && cardType == null && cardExpiry == null)

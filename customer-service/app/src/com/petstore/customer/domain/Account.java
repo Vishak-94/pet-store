@@ -6,8 +6,17 @@ package com.petstore.customer.domain;
  * <p>Flattens the legacy Account → ContactInfo → Address graph into one value
  * object for the customer aggregate (the pieces were always accessed together).
  * Field names preserved from the legacy ContactInfo/Address CMP beans.
+ *
+ * <p>{@code status} carries the legacy {@code AccountEJB.status} CMP field
+ * (values {@link #ACTIVE}/{@link #DISABLED}, seeded to {@code active} at
+ * creation). See {@code AccountLocalHome.Active}/{@code Disabled}.
  */
 public final class Account {
+
+    /** Legacy {@code AccountLocalHome.Active} status constant. */
+    public static final String ACTIVE = "active";
+    /** Legacy {@code AccountLocalHome.Disabled} status constant. */
+    public static final String DISABLED = "disabled";
 
     private final String givenName;
     private final String familyName;
@@ -19,10 +28,18 @@ public final class Account {
     private final String state;
     private final String zipCode;
     private final String country;
+    private final String status;
 
     public Account(String givenName, String familyName, String email, String telephone,
                    String streetName1, String streetName2, String city, String state,
                    String zipCode, String country) {
+        this(givenName, familyName, email, telephone, streetName1, streetName2,
+                city, state, zipCode, country, ACTIVE);
+    }
+
+    public Account(String givenName, String familyName, String email, String telephone,
+                   String streetName1, String streetName2, String city, String state,
+                   String zipCode, String country, String status) {
         this.givenName = givenName;
         this.familyName = familyName;
         this.email = email;
@@ -33,6 +50,7 @@ public final class Account {
         this.state = state;
         this.zipCode = zipCode;
         this.country = country;
+        this.status = status;
     }
 
     public String getGivenName() { return givenName; }
@@ -45,4 +63,5 @@ public final class Account {
     public String getState() { return state; }
     public String getZipCode() { return zipCode; }
     public String getCountry() { return country; }
+    public String getStatus() { return status; }
 }

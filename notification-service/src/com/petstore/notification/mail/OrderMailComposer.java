@@ -1,6 +1,7 @@
 package com.petstore.notification.mail;
 
 import com.petstore.messaging.events.InvoiceEvent;
+import com.petstore.messaging.events.OrderStatusEvent;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,6 +16,10 @@ public class OrderMailComposer {
     /** Legacy MailInvoiceMDB.MAIL_SUBJECT prefix. */
     private static final String SHIPPED_SUBJECT = "Java Pet Store Order Shipped: ";
     private static final String BACKORDER_SUBJECT = "Java Pet Store Order Delayed: ";
+    /** Legacy MailOrderApprovalMDB subject prefix (order approved/denied). */
+    private static final String STATUS_SUBJECT = "Java Pet Store Order Status: ";
+    /** Legacy MailCompletedOrderMDB subject prefix (order fully shipped/completed). */
+    private static final String COMPLETED_SUBJECT = "Java Pet Store Order COMPLETED: ";
 
     /** Compose the "order shipped" (or backorder) email for an invoice event. */
     public Email fromInvoice(InvoiceEvent invoice) {
@@ -41,12 +46,51 @@ public class OrderMailComposer {
         return new Email(to, BACKORDER_SUBJECT + invoice.orderId(), body);
     }
 
+    /**
+     * Compose the order-status email for an approval/denial/completion — the
+     * legacy {@code MailOrderApprovalMDB} ("Order Status: …") and
+     * {@code MailCompletedOrderMDB} ("Order COMPLETED: …") triggers. A COMPLETED
+     * status uses the dedicated completed subject; APPROVED/DENIED use the generic
+     * order-status subject.
+     */
+    public Email fromStatus(OrderStatusEvent event) {
+        String to = recipient(event.emailId(), event.userId());
+        if ("COMPLETED".equals(event.status())) {
+            String body = """
+                    Dear Customer,
+
+                    Your order #%s is now COMPLETE — all items have shipped.
+                    Order total: $%.2f
+
+                    Thank you for shopping with the Java Pet Store.
+
+                    — The Java Pet Store Team""".formatted(event.orderId(), event.totalPrice());
+            return new Email(to, COMPLETED_SUBJECT + event.orderId(), body);
+        }
+        String outcome = "DENIED".equals(event.status())
+                ? "has been declined" : "has been approved and is being prepared for shipment";
+        String body = """
+                Dear Customer,
+
+                The status of your order #%s %s.
+                Order total: $%.2f
+
+                You can track your order in your Pet Store account.
+
+                — The Java Pet Store Team""".formatted(event.orderId(), outcome, event.totalPrice());
+        return new Email(to, STATUS_SUBJECT + event.orderId(), body);
+    }
+
     private static String recipient(InvoiceEvent invoice) {
-        if (invoice.emailId() != null && !invoice.emailId().isBlank()) {
-            return invoice.emailId();
+        return recipient(invoice.emailId(), invoice.userId());
+    }
+
+    private static String recipient(String emailId, String userId) {
+        if (emailId != null && !emailId.isBlank()) {
+            return emailId;
         }
         // Fallback if the order carried no email (legacy also tolerated missing addr).
-        String who = invoice.userId() == null ? "customer" : invoice.userId();
+        String who = userId == null ? "customer" : userId;
         return who + "@petstore.invalid";
     }
 }

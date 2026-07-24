@@ -2,6 +2,7 @@ package com.petstore.opc.messaging;
 
 import com.petstore.messaging.Destinations;
 import com.petstore.messaging.events.PurchaseOrderEvent;
+import com.petstore.opc.domain.ContactInfo;
 import com.petstore.opc.domain.OrderLine;
 import com.petstore.opc.domain.OrderStatus;
 import com.petstore.opc.domain.WarehouseOrder;
@@ -11,6 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jms.annotation.JmsListener;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 /**
@@ -39,6 +42,27 @@ public class OrderListener {
                 .toList();
         fulfilment.receiveOrder(new WarehouseOrder(
                 msg.orderId(), msg.userId(), msg.emailId(), msg.locale(),
-                msg.totalPrice(), OrderStatus.PENDING, lines));
+                msg.totalPrice(), OrderStatus.PENDING, lines,
+                toDomain(msg.shipTo()), toDomain(msg.billTo()), occurredAt(msg)));
+    }
+
+    /** Order-received timestamp from the envelope (legacy PurchaseOrder poDate); now if absent/unparseable. */
+    private static Instant occurredAt(PurchaseOrderEvent msg) {
+        if (msg.meta() == null || msg.meta().occurredAt() == null) {
+            return Instant.now();
+        }
+        try {
+            return Instant.parse(msg.meta().occurredAt());
+        } catch (DateTimeParseException e) {
+            return Instant.now();
+        }
+    }
+
+    private static ContactInfo toDomain(PurchaseOrderEvent.ContactInfo c) {
+        if (c == null) {
+            return null;
+        }
+        return new ContactInfo(c.familyName(), c.givenName(), c.streetName1(), c.streetName2(),
+                c.city(), c.state(), c.zipCode(), c.country(), c.telephone(), c.email());
     }
 }

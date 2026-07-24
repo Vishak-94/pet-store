@@ -1,7 +1,9 @@
 package com.petstore.opc.client;
 
+import com.petstore.opc.client.OrderDtos.OrderApprovalDto;
 import com.petstore.opc.client.OrderDtos.OrderView;
 import com.petstore.opc.client.OrderDtos.OrdersByStatus;
+import com.petstore.opc.client.OrderDtos.SalesReportDto;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
@@ -54,6 +56,29 @@ public class OrderProcessingClient {
         http.post().uri(OrderProcessingEndpoints.ORDER_DENY, orderId)
                 .header("Authorization", bearer(bearer))
                 .retrieve().toBodilessEntity();
+    }
+
+    /** Apply a batch of status changes atomically (legacy updateOrders/OrderApproval). */
+    public void updateOrders(OrderApprovalDto approval, String bearer) {
+        http.post().uri(OrderProcessingEndpoints.ORDER_APPROVALS)
+                .header("Authorization", bearer(bearer))
+                .body(approval)
+                .retrieve().toBodilessEntity();
+    }
+
+    /** Sales aggregation over a date range (legacy getChartInfo); category optional. */
+    public SalesReportDto sales(String start, String end, String category, String bearer) {
+        return http.get()
+                .uri(uri -> {
+                    uri.path(OrderProcessingEndpoints.SALES)
+                            .queryParam("start", start).queryParam("end", end);
+                    if (category != null) {
+                        uri.queryParam("category", category);
+                    }
+                    return uri.build();
+                })
+                .header("Authorization", bearer(bearer))
+                .retrieve().body(SalesReportDto.class);
     }
 
     private static String bearer(String token) {

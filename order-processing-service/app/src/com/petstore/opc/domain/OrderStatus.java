@@ -8,14 +8,13 @@ import java.util.Set;
  * single writer of order status now). Same contract as the monolith's original.
  */
 public enum OrderStatus {
-    PENDING, APPROVED, DENIED, SHIPPED_PART, COMPLETED;
+    PENDING, APPROVED, DENIED, COMPLETED;
 
     private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED = Map.of(
-            PENDING,      Set.of(APPROVED, DENIED),
-            APPROVED,     Set.of(SHIPPED_PART, COMPLETED),
-            DENIED,       Set.of(),
-            SHIPPED_PART, Set.of(SHIPPED_PART, COMPLETED),
-            COMPLETED,    Set.of()
+            PENDING,   Set.of(APPROVED, DENIED),
+            APPROVED,  Set.of(COMPLETED),
+            DENIED,    Set.of(),
+            COMPLETED, Set.of()
     );
 
     public boolean canGoTo(OrderStatus target) {

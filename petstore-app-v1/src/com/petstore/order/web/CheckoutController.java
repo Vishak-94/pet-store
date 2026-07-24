@@ -4,6 +4,7 @@ import com.petstore.order.service.EmptyCartException;
 import com.petstore.order.service.OrderService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,9 +28,13 @@ public class CheckoutController {
     @PostMapping("/api/checkout")
     public ResponseEntity<Map<String, Object>> checkout(
             @RequestParam(defaultValue = "guest") String userId,
-            @RequestParam(defaultValue = "guest@petstore.com") String email) {
+            @RequestParam(defaultValue = "guest@petstore.com") String email,
+            @ModelAttribute CheckoutForm form) {
         try {
-            OrderService.OrderPlaced placed = orderService.checkout(userId, email);
+            // Legacy OrderHTMLAction validated both ship-to and bill-to before ordering.
+            ContactInfoForm.requireValid(form.getShipTo(), form.getBillTo());
+            OrderService.OrderPlaced placed = orderService.checkout(userId, email,
+                    form.getShipTo().toContactInfo(), form.getBillTo().toContactInfo());
             return ResponseEntity.ok(Map.of(
                     "orderId", placed.orderId(),
                     "total", placed.total(),

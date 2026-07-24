@@ -67,7 +67,11 @@ class HardeningTest {
         // auth-service reports a duplicate credential as 409 → mapped to DuplicateAccountException
         when(auth.provision(eq("dupuser"), any(), eq("USER")))
                 .thenThrow(HttpClientErrorException.create(HttpStatus.CONFLICT, "Conflict", null, null, null));
-        String body = "{\"userName\":\"dupuser\",\"password\":\"secret\",\"account\":{\"email\":\"d@x.com\"}}";
+        String body = "{\"userName\":\"dupuser\",\"password\":\"secret\","
+                + "\"account\":{\"givenName\":\"Jane\",\"familyName\":\"Doe\",\"email\":\"d@x.com\","
+                + "\"telephone\":\"212\",\"streetName1\":\"1 Main\",\"city\":\"NYC\",\"state\":\"NY\","
+                + "\"zipCode\":\"10001\",\"country\":\"USA\"},"
+                + "\"creditCard\":{\"cardNumber\":\"4111111111111111\",\"cardType\":\"VISA\",\"expiryDate\":\"12/2030\"}}";
         mvc.perform(post("/register").contentType("application/json").content(body))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.error").value("duplicate_account"));

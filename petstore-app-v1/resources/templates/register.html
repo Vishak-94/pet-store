@@ -6,6 +6,8 @@
 <h1>Create an Account</h1>
 <p th:if="${error}" style="color:red" th:text="${error}">error</p>
 <form th:action="@{/register-form}" method="post">
+    <!-- Return the user to the originating screen after account creation (legacy behaviour). -->
+    <input type="hidden" name="returnUrl" th:if="${returnUrl}" th:value="${returnUrl}"/>
     <h3>Login</h3>
     <p><label>Username* <input type="text" name="userName" required/></label></p>
     <p><label>Password* <input type="password" name="password" required/></label></p>

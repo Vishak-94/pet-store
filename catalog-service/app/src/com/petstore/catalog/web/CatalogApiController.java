@@ -48,8 +48,17 @@ public class CatalogApiController {
         if (lang == null || lang.isBlank()) {
             return Locale.US;
         }
+        // Legacy getLocaleFromString: "default" → the JVM default locale.
+        if (lang.equalsIgnoreCase("default")) {
+            return Locale.getDefault();
+        }
+        // Legacy handled language, language_country and language_country_variant.
         String[] parts = lang.split("_");
-        return parts.length == 2 ? new Locale(parts[0], parts[1]) : new Locale(lang);
+        return switch (parts.length) {
+            case 3 -> new Locale(parts[0], parts[1], parts[2]);
+            case 2 -> new Locale(parts[0], parts[1]);
+            default -> new Locale(lang);
+        };
     }
 
     // ---- categories ----

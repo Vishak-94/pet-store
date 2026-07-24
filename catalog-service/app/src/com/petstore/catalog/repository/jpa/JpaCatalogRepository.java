@@ -6,8 +6,10 @@ import com.petstore.catalog.domain.Page;
 import com.petstore.catalog.domain.Product;
 import com.petstore.catalog.repository.CatalogRepository;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Repository;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -24,15 +26,18 @@ import java.util.Optional;
 public class JpaCatalogRepository implements CatalogRepository {
 
     private final CategoryDetailRepository categoryDetails;
+    private final ProductBaseRepository productBase;
     private final ProductDetailRepository productDetails;
     private final ItemBaseRepository itemBase;
     private final ItemDetailRepository itemDetails;
 
     JpaCatalogRepository(CategoryDetailRepository categoryDetails,
+                         ProductBaseRepository productBase,
                          ProductDetailRepository productDetails,
                          ItemBaseRepository itemBase,
                          ItemDetailRepository itemDetails) {
         this.categoryDetails = categoryDetails;
+        this.productBase = productBase;
         this.productDetails = productDetails;
         this.itemBase = itemBase;
         this.itemDetails = itemDetails;
@@ -56,7 +61,7 @@ public class JpaCatalogRepository implements CatalogRepository {
         }
         int pageIndex = start / count;
         List<Category> cats = categoryDetails
-                .findByLocaleOrderByCatid(lang(locale), PageRequest.of(pageIndex, count))
+                .findByLocaleOrderByName(lang(locale), PageRequest.of(pageIndex, count))
                 .stream().map(e -> new Category(e.catid, e.name, e.descn)).toList();
         long total = categoryDetails.countByLocale(lang(locale));
         return new Page(cats, start, start + cats.size() < total);
@@ -74,10 +79,11 @@ public class JpaCatalogRepository implements CatalogRepository {
             return Page.EMPTY_PAGE;
         }
         int pageIndex = start / count;
-        List<Product> products = productDetails
-                .findByCategory(categoryId, lang(locale), PageRequest.of(pageIndex, count))
+        Slice<ProductDetailEntity> slice = productDetails
+                .findByCategory(categoryId, lang(locale), PageRequest.of(pageIndex, count));
+        List<Product> products = slice.getContent()
                 .stream().map(e -> new Product(e.productid, e.name, e.descn)).toList();
-        return new Page(products, start, products.size() == count);
+        return new Page(products, start, slice.hasNext());
     }
 
     @Override
@@ -92,10 +98,11 @@ public class JpaCatalogRepository implements CatalogRepository {
             return Page.EMPTY_PAGE;
         }
         int pageIndex = start / size;
-        List<Item> items = itemDetails
-                .findByProduct(productId, lang(locale), PageRequest.of(pageIndex, size))
+        Slice<ItemDetailEntity> slice = itemDetails
+                .findByProduct(productId, lang(locale), PageRequest.of(pageIndex, size));
+        List<Item> items = slice.getContent()
                 .stream().map(d -> toItem(d, locale)).toList();
-        return new Page(items, start, items.size() == size);
+        return new Page(items, start, slice.hasNext());
     }
 
     @Override
@@ -103,11 +110,19 @@ public class JpaCatalogRepository implements CatalogRepository {
         if (query == null || query.isBlank() || size <= 0 || start < 0) {
             return Page.EMPTY_PAGE;
         }
-        int pageIndex = start / size;
-        List<Item> items = itemDetails
-                .search(query.trim(), lang(locale), PageRequest.of(pageIndex, size))
-                .stream().map(d -> toItem(d, locale)).toList();
-        return new Page(items, start, items.size() == size);
+        // Legacy SEARCH_ITEMS tokenizes the query on whitespace; a query that is
+        // only whitespace yields no keywords → empty page.
+        List<String> tokens = Arrays.stream(query.trim().split("\\s+"))
+                .filter(t -> !t.isBlank()).toList();
+        if (tokens.isEmpty()) {
+            return Page.EMPTY_PAGE;
+        }
+        // Fetch one row past the requested count so hasNext is precise (legacy
+        // read one row past `count` to decide); return only the first `size`.
+        List<ItemDetailEntity> rows = itemDetails.search(tokens, lang(locale), start, size + 1);
+        boolean hasNext = rows.size() > size;
+        List<Item> items = rows.stream().limit(size).map(d -> toItem(d, locale)).toList();
+        return new Page(items, start, hasNext);
     }
 
     /** Assemble a domain Item, resolving its product membership + product name. */
@@ -116,8 +131,12 @@ public class JpaCatalogRepository implements CatalogRepository {
         String productName = productId == null ? null
                 : productDetails.findByProductidAndLocale(productId, lang(locale))
                         .map(p -> p.name).orElse(null);
+        // Legacy GET_ITEM selected `catid` into Item.category; resolve it from the
+        // product's category membership (product.catid).
+        String category = productId == null ? null
+                : productBase.findById(productId).map(b -> b.catid).orElse(null);
         return new Item(
-                null,                       // category not carried on item_details (legacy left null here)
+                category,
                 productId,
                 productName,
                 d.attr1, d.attr2, d.attr3, d.attr4, d.attr5,

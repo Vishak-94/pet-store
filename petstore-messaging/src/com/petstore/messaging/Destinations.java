@@ -28,4 +28,12 @@ public final class Destinations {
      * completes the order, notification-service emails the customer, etc.
      */
     public static final Destination INVOICE = topic("InvoiceTopic");
+
+    /**
+     * warehouse → (notification + any others): a customer-facing order status
+     * change (approved/denied/completed). A TOPIC so notification-service emails
+     * the customer and future subscribers can react. Restores the legacy
+     * MailOrderApprovalMDB / MailCompletedOrderMDB triggers.
+     */
+    public static final Destination ORDER_STATUS = topic("OrderStatusTopic");
 }

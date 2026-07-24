@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"/><title>My Account — Pet Store</title></head>
+<body>
+<div th:replace="~{fragments/nav :: navbar}"></div>
+<h1>My Account</h1>
+<p th:if="${updated}" style="color:green">Your account has been updated.</p>
+<p th:if="${error}" style="color:red" th:text="${error}">error</p>
+
+<!-- Legacy update_customer.screen: edit contact/address, profile prefs and card in one form.
+     Pre-filled from the customer profile fetched from customer-service. -->
+<form th:action="@{/customer}" method="post" th:with="acct=${customer != null ? customer.account : null},prof=${customer != null ? customer.profile : null}">
+    <h3>Contact &amp; Address</h3>
+    <p><label>First name <input type="text" name="givenName"
+            th:value="${acct != null ? acct['givenName'] : ''}"/></label>
+       <label>Last name <input type="text" name="familyName"
+            th:value="${acct != null ? acct['familyName'] : ''}"/></label></p>
+    <p><label>Email <input type="text" name="email"
+            th:value="${acct != null ? acct['email'] : ''}"/></label>
+       <label>Telephone <input type="text" name="telephone"
+            th:value="${acct != null ? acct['telephone'] : ''}"/></label></p>
+    <p><label>Street <input type="text" name="street1"
+            th:value="${acct != null ? acct['streetName1'] : ''}"/></label>
+       <label>Street 2 <input type="text" name="street2"
+            th:value="${acct != null ? acct['streetName2'] : ''}"/></label></p>
+    <p><label>City <input type="text" name="city"
+            th:value="${acct != null ? acct['city'] : ''}"/></label>
+       <label>State <input type="text" name="state"
+            th:value="${acct != null ? acct['state'] : ''}"/></label>
+       <label>Zip <input type="text" name="zipCode"
+            th:value="${acct != null ? acct['zipCode'] : ''}"/></label>
+       <label>Country <input type="text" name="country"
+            th:value="${acct != null ? acct['country'] : ''}"/></label></p>
+
+    <h3>Profile Preferences</h3>
+    <p><label>Preferred language <input type="text" name="language"
+            th:value="${prof != null ? prof['preferredLanguage'] : ''}" placeholder="en_US"/></label>
+       <label>Favorite category <input type="text" name="favoriteCategory"
+            th:value="${prof != null ? prof['favoriteCategory'] : ''}"/></label></p>
+    <p><label><input type="checkbox" name="myListPreference" value="true"
+            th:checked="${prof != null and prof['myListPreference']}"/> Show My List</label>
+       <label><input type="checkbox" name="bannerPreference" value="true"
+            th:checked="${prof != null and prof['bannerPreference']}"/> Show banners</label></p>
+
+    <h3>Credit Card</h3>
+    <p><em th:if="${customer != null and customer.cardMasked != null}">Current: <span th:text="${customer.cardMasked}">**** 1111</span></em></p>
+    <p><label>Number <input type="text" name="cardNumber" placeholder="leave blank to keep"/></label>
+       <label>Type <input type="text" name="cardType"/></label>
+       <label>Expiry <input type="text" name="cardExpiry" placeholder="MM/YY"/></label></p>
+
+    <p><button type="submit">Save Changes</button></p>
+</form>
+</body>
+</html>

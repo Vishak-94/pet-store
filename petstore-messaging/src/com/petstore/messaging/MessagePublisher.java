@@ -2,6 +2,7 @@ package com.petstore.messaging;
 
 import com.petstore.messaging.events.InvoiceEvent;
 import com.petstore.messaging.events.OrderApprovedEvent;
+import com.petstore.messaging.events.OrderStatusEvent;
 import com.petstore.messaging.events.PurchaseOrderEvent;
 import jakarta.jms.ConnectionFactory;
 import org.springframework.jms.core.JmsTemplate;
@@ -51,6 +52,7 @@ public class MessagePublisher {
         if (event instanceof PurchaseOrderEvent) return PurchaseOrderEvent.TYPE;
         if (event instanceof OrderApprovedEvent) return OrderApprovedEvent.TYPE;
         if (event instanceof InvoiceEvent) return InvoiceEvent.TYPE;
+        if (event instanceof OrderStatusEvent) return OrderStatusEvent.TYPE;
         return null;
     }
 }

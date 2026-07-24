@@ -21,10 +21,15 @@ class EventSerializationTest {
 
     @Test
     void purchaseOrderEvent_roundTrips_withEnvelope() throws Exception {
+        var shipTo = new PurchaseOrderEvent.ContactInfo("Doe", "Jane", "1 Main St", null,
+                "Seattle", "WA", "98101", "US", "555-1234", "jane@x.com");
+        var billTo = new PurchaseOrderEvent.ContactInfo("Doe", "Jane", "2 Bill Ave", "Apt 3",
+                "Seattle", "WA", "98102", "US", "555-5678", "jane@x.com");
         var event = new PurchaseOrderEvent(
                 Events.meta(PurchaseOrderEvent.TYPE, "corr-1"),
                 "1001", "u-1", "u@x.com", "en_US", 35.0,
-                List.of(new PurchaseOrderEvent.Line("EST-1", "FI-SW-01", "FISH", 1, 16.5)));
+                List.of(new PurchaseOrderEvent.Line("EST-1", "FI-SW-01", "FISH", 1, 16.5)),
+                shipTo, billTo);
 
         String json = mapper.writeValueAsString(event);
         assertThat(json).contains("\"eventId\"").contains("\"type\":\"PurchaseOrder\"")
@@ -35,6 +40,9 @@ class EventSerializationTest {
         assertThat(back.meta().correlationId()).isEqualTo("corr-1");
         assertThat(back.lines()).singleElement()
                 .satisfies(l -> assertThat(l.unitPrice()).isEqualTo(16.5));
+        assertThat(back.shipTo().city()).isEqualTo("Seattle");
+        assertThat(back.shipTo().streetName2()).isNull();
+        assertThat(back.billTo().streetName1()).isEqualTo("2 Bill Ave");
     }
 
     @Test
@@ -48,7 +56,7 @@ class EventSerializationTest {
     @Test
     void typeIdMap_coversAllEvents() {
         assertThat(MessagingConfig.TYPE_IDS)
-                .containsKeys("PurchaseOrder", "OrderApproved", "Invoice");
+                .containsKeys("PurchaseOrder", "OrderApproved", "Invoice", "OrderStatus");
     }
 
     @Test

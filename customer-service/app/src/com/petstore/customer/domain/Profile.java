@@ -5,7 +5,9 @@ package com.petstore.customer.domain;
  *
  * <p>Carried over from the legacy {@code customer.profile} component
  * (preferredLanguage, favoriteCategory, myListPreference, bannerPreference).
- * Legacy defaults: language/category null, both boolean prefs {@code false}.
+ * Legacy defaults (from {@code ProfileLocalHome}): preferredLanguage
+ * {@code "en_US"}, favoriteCategory {@code null}, and both boolean prefs
+ * {@code true}.
  */
 public final class Profile {
 
@@ -22,9 +24,9 @@ public final class Profile {
         this.bannerPreference = bannerPreference;
     }
 
-    /** Legacy default profile. */
+    /** Legacy default profile ({@code ProfileLocalHome} defaults). */
     public static Profile defaults() {
-        return new Profile(null, null, false, false);
+        return new Profile("en_US", null, true, true);
     }
 
     public String getPreferredLanguage() { return preferredLanguage; }

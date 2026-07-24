@@ -7,6 +7,30 @@ CREATE TABLE IF NOT EXISTS wh_order (
     locale VARCHAR(10),
     total_price DECIMAL(12,2) NOT NULL,
     status VARCHAR(20) NOT NULL,
+    -- order-received timestamp (legacy PurchaseOrder poDate); for date-range sales aggregation
+    created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- ship-to contact info collected at checkout (legacy PurchaseOrder shipping address)
+    ship_family_name VARCHAR(60),
+    ship_given_name VARCHAR(60),
+    ship_street1 VARCHAR(120),
+    ship_street2 VARCHAR(120),
+    ship_city VARCHAR(60),
+    ship_state VARCHAR(40),
+    ship_zip VARCHAR(20),
+    ship_country VARCHAR(40),
+    ship_telephone VARCHAR(40),
+    ship_email VARCHAR(120),
+    -- bill-to contact info collected at checkout (legacy PurchaseOrder billing address)
+    bill_family_name VARCHAR(60),
+    bill_given_name VARCHAR(60),
+    bill_street1 VARCHAR(120),
+    bill_street2 VARCHAR(120),
+    bill_city VARCHAR(60),
+    bill_state VARCHAR(40),
+    bill_zip VARCHAR(20),
+    bill_country VARCHAR(40),
+    bill_telephone VARCHAR(40),
+    bill_email VARCHAR(120),
     CONSTRAINT pk_wh_order PRIMARY KEY (order_id)
 );
 
