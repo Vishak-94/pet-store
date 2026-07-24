@@ -1185,6 +1185,37 @@ bullets(s, Inches(7.0), Inches(5.0), Inches(5.8), Inches(2.2), [
     ("\"Client\" was the wrong frame: a client is a thin proxy to a remote owner; cart IS the state + logic", {"size": 12}),
 ])
 
+# ═══════════════════════════════════════════════════════════════════════════
+# SLIDE — As-built runtime architecture (8 services + broker)
+# ═══════════════════════════════════════════════════════════════════════════
+def image_slide(title, subtitle, img_name, missing_hint):
+    s = slide()
+    title_bar(s, title, subtitle)
+    path = os.path.join(BASE, img_name)
+    if os.path.exists(path):
+        from PIL import Image
+        iw, ih = Image.open(path).size
+        avail_w = Inches(12.8); avail_h = Inches(5.9)
+        scale = min(avail_w / iw, avail_h / ih)
+        w = int(iw * scale); h = int(ih * scale)
+        x = int((SW - w) / 2); y = Inches(1.25) + int((avail_h - h) / 2)
+        s.shapes.add_picture(path, x, y, width=w, height=h)
+    else:
+        textbox(s, Inches(0.5), Inches(3), Inches(12), Inches(1), missing_hint, color=RED)
+
+image_slide("Migrated Architecture — As-Built (8 services + broker)",
+            "solid = HTTP/REST · dashed red = JMS · dotted grey = library/SDK imports · run: python3 petstore_architecture.py",
+            "petstore_architecture.png",
+            "petstore_architecture.png not found — run petstore_architecture.py")
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SLIDE — Package / client-SDK dependency graph
+# ═══════════════════════════════════════════════════════════════════════════
+image_slide("Package & Client-SDK Dependencies (Maven)",
+            "green = service publishes its SDK · blue = imports a client SDK (HTTP) · grey = imports a shared library (in-process)",
+            "petstore_packages.png",
+            "petstore_packages.png not found — run petstore_packages.py")
+
 prs.save(os.path.join(BASE, "PetStore_Architecture_LLD.pptx"))
 print("Wrote", os.path.join(BASE, "PetStore_Architecture_LLD.pptx"))
 print("Slides:", len(prs.slides._sldIdLst))
