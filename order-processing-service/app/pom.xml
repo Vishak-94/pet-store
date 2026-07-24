@@ -12,10 +12,11 @@
     </parent>
 
     <groupId>com.petstore</groupId>
-    <artifactId>admin-office-service</artifactId>
+    <artifactId>order-processing-service</artifactId>
     <version>1.0.0</version>
-    <name>admin-office-service</name>
-    <description>Pet Store back-office — order approval + status (ADMIN). From legacy admin.ear + opc.ear.</description>
+    <name>order-processing-service</name>
+    <description>Order Processing Center (legacy opc.ear): owns orders + workflow status,
+        persists on consume, auto-approves, handles invoices, exposes the admin facade API.</description>
 
     <properties>
         <java.version>21</java.version>
@@ -29,7 +30,7 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -39,20 +40,29 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-artemis</artifactId>
+        </dependency>
 
-        <!-- NOTE: no JPA/H2/JMS — the admin console owns no order data. It calls
-             order-processing-service (the OPC) via the client SDK below. -->
-
-        <!-- Central auth: verify RS256 tokens (public key) + delegate login to
-             auth-service. Pulls in jjwt transitively. Verify-only — cannot mint. -->
+        <!-- shared messaging (queues + InvoiceTopic + event envelope) -->
+        <dependency>
+            <groupId>com.petstore</groupId>
+            <artifactId>petstore-messaging</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <!-- verify RS256 tokens from auth-service -->
         <dependency>
             <groupId>com.petstore</groupId>
             <artifactId>auth-client</artifactId>
             <version>1.0.0</version>
         </dependency>
-
-        <!-- Order Processing Center facade client — this console delegates
-             list/approve/deny to order-processing-service (legacy admin.ear → OPCAdminFacade). -->
+        <!-- reuse the admin-facade DTOs/endpoint constants (single-sourced contract) -->
         <dependency>
             <groupId>com.petstore</groupId>
             <artifactId>order-processing-client</artifactId>

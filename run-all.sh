@@ -43,6 +43,7 @@ start auth-service       auth-service/app/target/auth-service-1.0.0.jar       80
 # 3) domain + back-office services (connect to the broker + auth).
 start customer-service   customer-service/app/target/customer-service-1.0.0.jar   8081 "Started CustomerServiceApplication"
 start catalog-service    catalog-service/app/target/catalog-service-1.0.0.jar     8083 "Started CatalogServiceApplication"
+start order-processing-service order-processing-service/app/target/order-processing-service-1.0.0.jar 8088 "Started OrderProcessingApplication"
 start admin-office-service admin-office-service/target/admin-office-service-1.0.0.jar 8082 "Started WarehouseServiceApplication"
 start inventory-service  inventory-service/target/inventory-service-1.0.0.jar     8085 "Started InventoryServiceApplication"
 start notification-service notification-service/target/notification-service-1.0.0.jar 8087 "Started NotificationServiceApplication"

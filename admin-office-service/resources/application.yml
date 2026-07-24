@@ -1,35 +1,19 @@
 spring:
   application:
     name: admin-office-service
-  datasource:
-    url: jdbc:h2:mem:adminoffice;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
-  jpa:
-    hibernate:
-      ddl-auto: none
-    show-sql: false
-  sql:
-    init:
-      mode: always
-  h2:
-    console:
-      enabled: true
-  # Connect to the SHARED broker hosted by petstore-app-v1 (tcp://localhost:61616),
-  # so checkout (producer) and this service (consumer) share the PurchaseOrderQueue.
-  artemis:
-    mode: native
-    broker-url: tcp://localhost:61616
+  # No database, no JMS — the admin console owns no order data. It calls
+  # order-processing-service (the OPC) over HTTP and verifies auth-service tokens.
 
 server:
   port: 8082
 
-# Central IdP: admin-office-service delegates login to auth-service and verifies
-# its RS256 tokens with the bundled public key (auth-client). Holds no credentials.
 services:
+  # Login delegated to the central IdP; tokens verified via auth-client public key.
   auth:
     base-url: ${AUTH_SERVICE_URL:http://localhost:8086}
+  # The Order Processing Center facade this console delegates to.
+  opc:
+    base-url: ${OPC_SERVICE_URL:http://localhost:8088}
 
 management:
   endpoints:

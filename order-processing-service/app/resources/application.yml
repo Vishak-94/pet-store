@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: order-processing-service
+  datasource:
+    url: jdbc:h2:mem:opc;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+  sql:
+    init:
+      mode: always
+  # Connect to the SHARED broker hosted by petstore-app-v1 (:61616).
+  # Consumes PurchaseOrderQueue + InvoiceTopic; publishes ApprovedOrderQueue.
+  artemis:
+    mode: native
+    broker-url: tcp://localhost:61616
+
+server:
+  port: 8088
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.petstore: INFO

@@ -2,7 +2,6 @@ package com.petstore.web;
 
 import com.petstore.cart.service.CartService;
 import com.petstore.customer.client.CustomerServiceClient;
-import com.petstore.order.domain.PurchaseOrder;
 import com.petstore.order.service.EmptyCartException;
 import com.petstore.order.service.OrderService;
 import org.slf4j.Logger;
@@ -100,9 +99,9 @@ public class StorefrontController {
                 .map(c -> c.account() == null ? null : (String) c.account().get("email"))
                 .orElse(userId + "@petstore.com");
         try {
-            PurchaseOrder po = orders.checkout(userId, email);
-            model.addAttribute("orderId", po.getOrderId());
-            model.addAttribute("total", po.getTotalPrice());
+            OrderService.OrderPlaced placed = orders.checkout(userId, email);
+            model.addAttribute("orderId", placed.orderId());
+            model.addAttribute("total", placed.total());
             model.addAttribute("status", "SUBMITTED");   // status now owned by warehouse-service
             return "order_complete";
         } catch (EmptyCartException e) {

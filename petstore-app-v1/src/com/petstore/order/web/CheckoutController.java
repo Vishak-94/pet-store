@@ -1,6 +1,5 @@
 package com.petstore.order.web;
 
-import com.petstore.order.domain.PurchaseOrder;
 import com.petstore.order.service.EmptyCartException;
 import com.petstore.order.service.OrderService;
 import org.springframework.http.HttpStatus;
@@ -30,11 +29,11 @@ public class CheckoutController {
             @RequestParam(defaultValue = "guest") String userId,
             @RequestParam(defaultValue = "guest@petstore.com") String email) {
         try {
-            PurchaseOrder po = orderService.checkout(userId, email);
+            OrderService.OrderPlaced placed = orderService.checkout(userId, email);
             return ResponseEntity.ok(Map.of(
-                    "orderId", po.getOrderId(),
-                    "total", po.getTotalPrice(),
-                    "note", "submitted to warehouse for fulfilment"));
+                    "orderId", placed.orderId(),
+                    "total", placed.total(),
+                    "note", "submitted to order-processing-service for fulfilment"));
         } catch (EmptyCartException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", "cart_empty"));

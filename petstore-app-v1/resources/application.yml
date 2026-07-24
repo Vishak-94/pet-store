@@ -2,28 +2,11 @@ spring:
   application:
     name: petstore-app-v1
 
-  # In-memory H2 (replaces Cloudscape). Schema created from schema.sql, seeded from data.sql.
-  datasource:
-    url: jdbc:h2:mem:petstore;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
-
-  jpa:
-    hibernate:
-      ddl-auto: none          # schema is created by schema.sql (mirrors legacy DDL exactly)
-    show-sql: false
-
-  sql:
-    init:
-      mode: always            # run schema.sql + data.sql on startup
-
-  h2:
-    console:
-      enabled: true
+  # No database — the storefront persists nothing (legacy model): it builds the
+  # order and publishes it; order-processing-service is the authoritative store.
 
   # Embedded ActiveMQ Artemis broker — JMS is preserved (queues + InvoiceTopic).
-  # Wired now so later phases (order/fulfilment) plug in without config changes.
+  # The storefront hosts the shared broker so all services connect to :61616.
   artemis:
     # Embedded broker that ALSO listens on tcp://localhost:61616 so admin-office-service
     # can connect to the same broker (shared queue across services).

@@ -4,6 +4,7 @@ import com.petstore.auth.client.AuthClient;
 import com.petstore.auth.client.AuthJwtFilter;
 import com.petstore.auth.client.AuthPublicKey;
 import com.petstore.auth.client.JwtVerifier;
+import com.petstore.opc.client.OrderProcessingClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,6 +30,12 @@ public class SecurityConfig {
     @Bean
     AuthClient authClient(@Value("${services.auth.base-url:http://localhost:8086}") String baseUrl) {
         return new AuthClient(baseUrl);
+    }
+
+    @Bean
+    OrderProcessingClient orderProcessingClient(
+            @Value("${services.opc.base-url:http://localhost:8088}") String baseUrl) {
+        return new OrderProcessingClient(baseUrl);   // calls the OPC admin facade
     }
 
     @Bean

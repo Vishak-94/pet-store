@@ -2,15 +2,14 @@ package com.petstore.warehouse;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.jms.annotation.EnableJms;
 
 /**
- * warehouse-service — merges the legacy admin.ear (back-office order approval)
- * and supplier.ear (fulfilment + inventory). Owns order_status + inventory,
- * consumes PurchaseOrderQueue, and serves a staff UI (JWT/ADMIN).
+ * admin-office-service — the back-office ADMIN console (legacy admin.ear). It owns
+ * NO order data: it lists orders and submits approve/deny by calling
+ * order-processing-service (the OPC / legacy OPCAdminFacade) via its client SDK.
+ * Verify-only auth (auth-client); ADMIN role.
  */
-@SpringBootApplication(scanBasePackages = {"com.petstore.warehouse", "com.petstore.messaging"})
-@EnableJms
+@SpringBootApplication
 public class WarehouseServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(WarehouseServiceApplication.class, args);

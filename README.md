@@ -1,7 +1,15 @@
 # Java Pet Store — Migrated to Spring Boot 3.x / Java 21
 
+**Project URL:** _<!-- TODO: paste your public GitHub URL here after pushing, e.g.
+https://github.com/<you>/petstore-springboot-migration -->_ **(not yet published — see [Publishing to GitHub](#publishing-to-github))**
+
 A migration of the legacy **Java Pet Store 1.3.1_02** (J2EE 1.3 BluePrints — EJB 2.x CMP,
 JMS, Cloudscape, 4 `.ear` apps) to a modern **Spring Boot 3.3.5 / Java 21** system.
+
+![Architecture](petstore_architecture.png)
+
+*(Full-resolution: [`petstore_architecture.svg`](petstore_architecture.svg) · regenerate with
+`python3 petstore_architecture.py`. Solid = HTTP/REST, dashed red = JMS, dotted grey = library/SDK imports.)*
 
 The migration was approached *as if the legacy codebase were far larger*: work was broken
 into phased tasks, behaviour was pinned with **characterization tests** before changes, and
@@ -120,6 +128,22 @@ Browser ─▶ petstore-app-v1 (:8080, storefront + embedded broker)
 Full decision log — every option weighed and the rationale — is in **[`DECISIONS.md`](DECISIONS.md)**.
 
 ---
+
+## Publishing to GitHub
+
+The repo is committed locally. To publish it as a public GitHub project:
+
+```bash
+# with the GitHub CLI:
+gh repo create petstore-springboot-migration --public --source=. --remote=origin --push
+
+# or manually (after creating an empty repo on github.com):
+git remote add origin https://github.com/<you>/petstore-springboot-migration.git
+git branch -M main
+git push -u origin main
+```
+
+Then paste the resulting URL at the top of this README.
 
 ## Notes / known limitations
 
