@@ -1204,6 +1204,11 @@ def image_slide(title, subtitle, img_name, missing_hint):
     else:
         textbox(s, Inches(0.5), Inches(3), Inches(12), Inches(1), missing_hint, color=RED)
 
+image_slide("Legacy Components & Their Roles (annotated)",
+            "J2EE 1.3 · WAF web controller · 4 EARs · 19 reusable components · each box states its role · run: python3 petstore_legacy_components.py",
+            "petstore_legacy_components.png",
+            "petstore_legacy_components.png not found — run petstore_legacy_components.py")
+
 image_slide("Migrated Architecture — As-Built (8 services + broker)",
             "solid = HTTP/REST · dashed red = JMS · dotted grey = library/SDK imports · run: python3 petstore_architecture.py",
             "petstore_architecture.png",
