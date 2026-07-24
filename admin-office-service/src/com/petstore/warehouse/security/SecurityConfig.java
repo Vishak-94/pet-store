@@ -45,7 +45,7 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/**", "/warehouse/login", "/warehouse/logout").permitAll()
-                .requestMatchers("/warehouse/orders/**", "/api/orders/**", "/warehouse/users", "/warehouse/users/**").hasRole("ADMIN")
+                .requestMatchers("/warehouse/orders/**", "/api/orders/**", "/api/sales", "/api/sales/**", "/warehouse/users", "/warehouse/users/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
             .exceptionHandling(e -> e
                 .authenticationEntryPoint((req, res, ex) -> {

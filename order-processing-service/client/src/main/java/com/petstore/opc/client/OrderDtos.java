@@ -25,4 +25,23 @@ public final class OrderDtos {
     /** A page of order ids for a status. */
     public record OrdersByStatus(String status, List<String> orderIds, int count) {
     }
+
+    /** One requested status change in a batch approval (legacy {@code ChangedOrder}). */
+    public record OrderStatusChangeDto(String orderId, String newStatus) {
+    }
+
+    /** A batch of status changes applied atomically (legacy {@code OrderApproval}). */
+    public record OrderApprovalDto(List<OrderStatusChangeDto> orders) {
+    }
+
+    /** One aggregation bucket of a sales report, keyed by category or item id. */
+    public record SalesBucketDto(String key, double revenue, int quantity) {
+    }
+
+    /**
+     * Aggregated sales over a date range (legacy {@code getChartInfo} result).
+     * {@code groupBy} is {@code "category"} or {@code "item"}.
+     */
+    public record SalesReportDto(String groupBy, List<SalesBucketDto> buckets) {
+    }
 }

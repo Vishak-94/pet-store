@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Locale;
 
 /**
@@ -44,9 +45,11 @@ public class FulfilmentService {
         }
         boolean auto = approvalPolicy.canAutoApprove(incoming.totalPrice(), localeOf(incoming.locale()));
         OrderStatus initial = auto ? OrderStatus.APPROVED : OrderStatus.PENDING;
+        Instant created = incoming.created() != null ? incoming.created() : Instant.now();
         WarehouseOrder saved = orders.save(new WarehouseOrder(
                 incoming.orderId(), incoming.userId(), incoming.emailId(),
-                incoming.locale(), incoming.totalPrice(), initial, incoming.lines()));
+                incoming.locale(), incoming.totalPrice(), initial, incoming.lines(),
+                incoming.shipTo(), incoming.billTo(), created));
         log.info("Order {} received → {} (total {})", incoming.orderId(), initial, incoming.totalPrice());
         if (auto) {
             approvalGateway.dispatchForFulfilment(saved);   // → ApprovedOrderQueue → inventory-service

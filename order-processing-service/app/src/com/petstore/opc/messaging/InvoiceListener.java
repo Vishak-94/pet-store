@@ -2,7 +2,9 @@ package com.petstore.opc.messaging;
 
 import com.petstore.messaging.events.InvoiceEvent;
 import com.petstore.opc.domain.OrderStatus;
+import com.petstore.opc.domain.WarehouseOrder;
 import com.petstore.opc.repository.OrderStore;
+import com.petstore.opc.service.OrderStatusGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jms.annotation.JmsListener;
@@ -21,9 +23,11 @@ public class InvoiceListener {
     private static final Logger log = LoggerFactory.getLogger(InvoiceListener.class);
 
     private final OrderStore orders;
+    private final OrderStatusGateway statusGateway;
 
-    public InvoiceListener(OrderStore orders) {
+    public InvoiceListener(OrderStore orders, OrderStatusGateway statusGateway) {
         this.orders = orders;
+        this.statusGateway = statusGateway;
     }
 
     @JmsListener(destination = "InvoiceTopic", containerFactory = "topicFactory")
@@ -41,6 +45,8 @@ public class InvoiceListener {
         if (invoice.shipped() && status.canGoTo(OrderStatus.COMPLETED)) {
             orders.updateStatus(invoice.orderId(), OrderStatus.COMPLETED);
             log.info("Order {} → COMPLETED (invoice shipped)", invoice.orderId());
+            orders.findById(invoice.orderId()).ifPresent(order ->
+                    statusGateway.announce(order, OrderStatus.COMPLETED));   // → customer "Order COMPLETED" email (legacy MailCompletedOrderMDB)
         } else if (!invoice.shipped()) {
             log.info("Order {} backordered by inventory — staying {}", invoice.orderId(), status);
         }

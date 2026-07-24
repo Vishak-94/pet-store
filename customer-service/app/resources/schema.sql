@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS customer (
     state VARCHAR(80),
     zip_code VARCHAR(20),
     country VARCHAR(80),
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
     preferred_language VARCHAR(20),
     favorite_category VARCHAR(20),
     my_list_pref BOOLEAN NOT NULL DEFAULT FALSE,

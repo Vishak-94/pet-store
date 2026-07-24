@@ -18,7 +18,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -38,6 +40,7 @@ public class CustomerController {
 
     @PostMapping(CustomerServiceEndpoints.REGISTER)
     public ResponseEntity<Map<String, String>> register(@Valid @RequestBody CustomerDtos.RegisterRequest req) {
+        requireRegistrationFields(req);
         Account account = toAccount(req.account());
         CreditCard card = toCard(req.creditCard());
         Customer c = customers.register(req.userName(), req.password(), account, card);
@@ -69,6 +72,49 @@ public class CustomerController {
         return toView(customers.updateCreditCard(id, toCard(dto)));
     }
 
+    /**
+     * Service-side guard mirroring the legacy {@code CustomerHTMLAction} required
+     * set ({@code extractContactInfo} + {@code extractCreditCard}): the contact-info
+     * and credit-card fields the legacy create form rejected as
+     * {@code MissingFormDataException}. Legacy treats streetName2, country and
+     * email as optional (email/country are read but never flagged; streetName2 is
+     * explicitly nulled when blank), so they are NOT required here. A missing/blank
+     * required field yields a clear HTTP 400.
+     */
+    private static void requireRegistrationFields(CustomerDtos.RegisterRequest req) {
+        List<String> missing = new ArrayList<>();
+        CustomerDtos.AccountDto a = req.account();
+        if (a == null) {
+            missing.add("account");
+        } else {
+            requireField(missing, "account.familyName", a.familyName());
+            requireField(missing, "account.givenName", a.givenName());
+            requireField(missing, "account.streetName1", a.streetName1());
+            requireField(missing, "account.city", a.city());
+            requireField(missing, "account.state", a.state());
+            requireField(missing, "account.zipCode", a.zipCode());
+            requireField(missing, "account.telephone", a.telephone());
+        }
+        CustomerDtos.CardDto c = req.creditCard();
+        if (c == null) {
+            missing.add("creditCard");
+        } else {
+            requireField(missing, "creditCard.cardNumber", c.cardNumber());
+            requireField(missing, "creditCard.cardType", c.cardType());
+            requireField(missing, "creditCard.expiryDate", c.expiryDate());
+        }
+        if (!missing.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Missing required registration fields: " + String.join(", ", missing));
+        }
+    }
+
+    private static void requireField(List<String> missing, String name, String value) {
+        if (value == null || value.trim().isEmpty()) {
+            missing.add(name);
+        }
+    }
+
     // ---- mapping between SDK DTOs and the domain (server-side only) ----
 
     private static Account toAccount(CustomerDtos.AccountDto a) {
@@ -95,6 +141,7 @@ public class CustomerController {
             account.put("state", a.getState());
             account.put("zipCode", a.getZipCode());
             account.put("country", a.getCountry());
+            account.put("status", a.getStatus());
         }
         Map<String, Object> profile = null;
         Profile p = c.getProfile();

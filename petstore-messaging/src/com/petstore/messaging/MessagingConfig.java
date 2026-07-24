@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.petstore.messaging.events.InvoiceEvent;
 import com.petstore.messaging.events.OrderApprovedEvent;
+import com.petstore.messaging.events.OrderStatusEvent;
 import com.petstore.messaging.events.PurchaseOrderEvent;
 import jakarta.jms.ConnectionFactory;
 import org.springframework.context.annotation.Bean;
@@ -37,7 +38,8 @@ public class MessagingConfig {
     public static final Map<String, Class<?>> TYPE_IDS = Map.of(
             PurchaseOrderEvent.TYPE, PurchaseOrderEvent.class,
             OrderApprovedEvent.TYPE, OrderApprovedEvent.class,
-            InvoiceEvent.TYPE, InvoiceEvent.class);
+            InvoiceEvent.TYPE, InvoiceEvent.class,
+            OrderStatusEvent.TYPE, OrderStatusEvent.class);
 
     @Bean
     public MessageConverter jacksonJmsMessageConverter() {

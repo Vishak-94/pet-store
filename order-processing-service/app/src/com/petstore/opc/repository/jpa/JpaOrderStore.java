@@ -1,11 +1,15 @@
 package com.petstore.opc.repository.jpa;
 
+import com.petstore.opc.domain.ContactInfo;
 import com.petstore.opc.domain.OrderLine;
 import com.petstore.opc.domain.OrderStatus;
+import com.petstore.opc.domain.SalesReport;
+import com.petstore.opc.domain.SalesReport.SalesBucket;
 import com.petstore.opc.domain.WarehouseOrder;
 import com.petstore.opc.repository.OrderStore;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +32,9 @@ public class JpaOrderStore implements OrderStore {
         e.locale = o.locale();
         e.totalPrice = o.totalPrice();
         e.status = o.status();
+        e.created = o.created();
+        e.shipTo = toEmbeddable(o.shipTo());
+        e.billTo = toEmbeddable(o.billTo());
         for (OrderLine l : o.lines()) {
             WarehouseLineEntity le = new WarehouseLineEntity();
             le.itemId = l.itemId();
@@ -63,11 +70,52 @@ public class JpaOrderStore implements OrderStore {
         return jpa.findByStatus(status).stream().map(e -> e.orderId).toList();
     }
 
+    @Override
+    public SalesReport aggregateSales(Instant start, Instant end, String categoryId) {
+        boolean byItem = categoryId != null;
+        List<Object[]> rows = byItem
+                ? jpa.aggregateByItem(start, end, categoryId)
+                : jpa.aggregateByCategory(start, end);
+        List<SalesBucket> buckets = rows.stream()
+                .map(r -> new SalesBucket((String) r[0],
+                        r[1] == null ? 0.0 : ((Number) r[1]).doubleValue(),
+                        r[2] == null ? 0 : ((Number) r[2]).intValue()))
+                .toList();
+        return new SalesReport(byItem ? "item" : "category", buckets);
+    }
+
     private WarehouseOrder toDomain(WarehouseOrderEntity e) {
         List<OrderLine> lines = new ArrayList<>();
         for (WarehouseLineEntity le : e.lines) {
             lines.add(new OrderLine(le.itemId, le.productId, le.categoryId, le.quantity, le.unitPrice));
         }
-        return new WarehouseOrder(e.orderId, e.userId, e.emailId, e.locale, e.totalPrice, e.status, lines);
+        return new WarehouseOrder(e.orderId, e.userId, e.emailId, e.locale, e.totalPrice, e.status, lines,
+                toDomain(e.shipTo), toDomain(e.billTo), e.created);
+    }
+
+    private static ContactInfoEmbeddable toEmbeddable(ContactInfo c) {
+        if (c == null) {
+            return null;
+        }
+        ContactInfoEmbeddable ce = new ContactInfoEmbeddable();
+        ce.familyName = c.familyName();
+        ce.givenName = c.givenName();
+        ce.streetName1 = c.streetName1();
+        ce.streetName2 = c.streetName2();
+        ce.city = c.city();
+        ce.state = c.state();
+        ce.zipCode = c.zipCode();
+        ce.country = c.country();
+        ce.telephone = c.telephone();
+        ce.email = c.email();
+        return ce;
+    }
+
+    private static ContactInfo toDomain(ContactInfoEmbeddable ce) {
+        if (ce == null) {
+            return null;
+        }
+        return new ContactInfo(ce.familyName, ce.givenName, ce.streetName1, ce.streetName2,
+                ce.city, ce.state, ce.zipCode, ce.country, ce.telephone, ce.email);
     }
 }

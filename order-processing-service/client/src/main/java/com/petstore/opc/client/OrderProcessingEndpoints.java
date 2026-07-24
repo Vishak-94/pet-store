@@ -26,4 +26,10 @@ public final class OrderProcessingEndpoints {
 
     /** POST — deny: /api/orders/{id}/deny */
     public static final String ORDER_DENY = "/api/orders/{id}/deny";
+
+    /** POST — atomic batch status update (legacy updateOrders/OrderApproval): /api/orders/approvals */
+    public static final String ORDER_APPROVALS = "/api/orders/approvals";
+
+    /** GET — sales aggregation over a date range (legacy getChartInfo): /api/sales?start=&end=&category= */
+    public static final String SALES = "/api/sales";
 }

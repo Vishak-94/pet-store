@@ -13,9 +13,12 @@ import org.springframework.transaction.annotation.Transactional;
  * everything shipped. The approval decision itself lives in warehouse-service;
  * this service only fulfils.
  *
- * <p>All-or-nothing per order: if any line is short, nothing is decremented and
- * the order is reported as not shipped (backorder), mirroring the legacy "ship
- * only if all lines available" behaviour.
+ * <p>All-or-nothing per order (an intentional design decision, not the legacy
+ * behaviour): if every line has sufficient stock, reserve all lines and ship —
+ * the invoice reports shipped=true and the order moves to COMPLETED. If any line
+ * is short, nothing is reserved or decremented and the invoice reports
+ * shipped=false — the order stays APPROVED for a later retry once restocked.
+ * There is no partial shipment.
  */
 @Service
 public class FulfilmentService {

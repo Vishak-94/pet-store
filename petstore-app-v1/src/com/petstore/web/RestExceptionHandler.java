@@ -1,6 +1,7 @@
 package com.petstore.web;
 
 import com.petstore.order.service.EmptyCartException;
+import com.petstore.order.web.MissingFormDataException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -33,5 +34,14 @@ public class RestExceptionHandler {
     public ResponseEntity<Map<String, String>> handleEmptyCart(EmptyCartException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("error", "cart_empty", "message", ex.getMessage()));
+    }
+
+    /** Missing required ship-to/bill-to address fields at checkout → 400. */
+    @ExceptionHandler(MissingFormDataException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingFormData(MissingFormDataException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", "missing_form_data",
+                        "message", ex.getMessage(),
+                        "missingFields", ex.getMissingFields()));
     }
 }

@@ -44,9 +44,16 @@ public class OrderService {
      * Places an order from the current cart: build the PO event, publish to the
      * Order Processing Center via JMS, empty the cart. No local persistence.
      *
+     * <p>{@code shipTo}/{@code billTo} carry the ship-to and bill-to contact info
+     * the legacy {@code OrderEJBAction} collected at checkout; they are populated
+     * on the published {@link PurchaseOrderEvent} (may be null for the API path
+     * that doesn't collect them).
+     *
      * @throws EmptyCartException if the cart has no resolvable items
      */
-    public OrderPlaced checkout(String userId, String emailId) {
+    public OrderPlaced checkout(String userId, String emailId,
+                                PurchaseOrderEvent.ContactInfo shipTo,
+                                PurchaseOrderEvent.ContactInfo billTo) {
         List<CartItem> items = cart.getItems();
         if (items.isEmpty()) {
             throw new EmptyCartException();
@@ -65,10 +72,15 @@ public class OrderService {
 
         PurchaseOrderEvent event = new PurchaseOrderEvent(
                 Events.meta(PurchaseOrderEvent.TYPE),
-                orderId, userId, emailId, LOCALE, total, lines);
+                orderId, userId, emailId, LOCALE, total, lines, shipTo, billTo);
 
         publisher.publish(Destinations.PURCHASE_ORDER, event);   // → order-processing-service
         cart.empty();
         return new OrderPlaced(orderId, total);
+    }
+
+    /** Convenience overload for callers that don't collect ship/bill contact info. */
+    public OrderPlaced checkout(String userId, String emailId) {
+        return checkout(userId, emailId, null, null);
     }
 }

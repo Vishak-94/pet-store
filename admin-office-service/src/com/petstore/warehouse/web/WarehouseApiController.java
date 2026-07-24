@@ -1,12 +1,15 @@
 package com.petstore.warehouse.web;
 
+import com.petstore.opc.client.OrderDtos.OrderApprovalDto;
 import com.petstore.opc.client.OrderDtos.OrdersByStatus;
+import com.petstore.opc.client.OrderDtos.SalesReportDto;
 import com.petstore.opc.client.OrderProcessingClient;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -54,5 +57,20 @@ public class WarehouseApiController {
         return opc.getOrder(id, bearer(req))
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /** Atomic batch approval (legacy updateOrders/OrderApproval) — delegates to the OPC. */
+    @PostMapping("/api/orders/approvals")
+    public ResponseEntity<Void> updateOrders(@RequestBody OrderApprovalDto approval, HttpServletRequest req) {
+        opc.updateOrders(approval, bearer(req));
+        return ResponseEntity.ok().build();
+    }
+
+    /** Sales aggregation over a date range (legacy getChartInfo) — delegates to the OPC. */
+    @GetMapping("/api/sales")
+    public SalesReportDto sales(@RequestParam String start, @RequestParam String end,
+                                @RequestParam(required = false) String category,
+                                HttpServletRequest req) {
+        return opc.sales(start, end, category, bearer(req));
     }
 }

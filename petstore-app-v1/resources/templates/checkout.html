@@ -38,6 +38,48 @@
 </div>
 
 <form th:action="@{/checkout}" method="post" th:unless="${#lists.isEmpty(items)}">
+    <!-- Ship-to / bill-to collected + validated at checkout, as legacy OrderHTMLAction did.
+         Required (*): first/last name, street, city, state, zip, telephone (both sides). -->
+    <h3>Ship-To Address</h3>
+    <p><label>First name* <input type="text" name="shipTo.givenName"
+            th:value="${customer != null and customer.account != null ? customer.account['givenName'] : ''}"/></label>
+       <label>Last name* <input type="text" name="shipTo.familyName"
+            th:value="${customer != null and customer.account != null ? customer.account['familyName'] : ''}"/></label></p>
+    <p><label>Street* <input type="text" name="shipTo.streetName1"
+            th:value="${customer != null and customer.account != null ? customer.account['streetName1'] : ''}"/></label></p>
+    <p><label>Street 2 <input type="text" name="shipTo.streetName2"/></label></p>
+    <p><label>City* <input type="text" name="shipTo.city"
+            th:value="${customer != null and customer.account != null ? customer.account['city'] : ''}"/></label>
+       <label>State* <input type="text" name="shipTo.state"
+            th:value="${customer != null and customer.account != null ? customer.account['state'] : ''}"/></label>
+       <label>Zip* <input type="text" name="shipTo.zipCode"
+            th:value="${customer != null and customer.account != null ? customer.account['zipCode'] : ''}"/></label>
+       <label>Country <input type="text" name="shipTo.country"
+            th:value="${customer != null and customer.account != null ? customer.account['country'] : ''}"/></label></p>
+    <p><label>Telephone* <input type="text" name="shipTo.telephone"
+            th:value="${customer != null and customer.account != null ? customer.account['telephone'] : ''}"/></label>
+       <label>Email <input type="text" name="shipTo.email"/></label></p>
+
+    <h3>Bill-To Address</h3>
+    <p><label>First name* <input type="text" name="billTo.givenName"
+            th:value="${customer != null and customer.account != null ? customer.account['givenName'] : ''}"/></label>
+       <label>Last name* <input type="text" name="billTo.familyName"
+            th:value="${customer != null and customer.account != null ? customer.account['familyName'] : ''}"/></label></p>
+    <p><label>Street* <input type="text" name="billTo.streetName1"
+            th:value="${customer != null and customer.account != null ? customer.account['streetName1'] : ''}"/></label></p>
+    <p><label>Street 2 <input type="text" name="billTo.streetName2"/></label></p>
+    <p><label>City* <input type="text" name="billTo.city"
+            th:value="${customer != null and customer.account != null ? customer.account['city'] : ''}"/></label>
+       <label>State* <input type="text" name="billTo.state"
+            th:value="${customer != null and customer.account != null ? customer.account['state'] : ''}"/></label>
+       <label>Zip* <input type="text" name="billTo.zipCode"
+            th:value="${customer != null and customer.account != null ? customer.account['zipCode'] : ''}"/></label>
+       <label>Country <input type="text" name="billTo.country"
+            th:value="${customer != null and customer.account != null ? customer.account['country'] : ''}"/></label></p>
+    <p><label>Telephone* <input type="text" name="billTo.telephone"
+            th:value="${customer != null and customer.account != null ? customer.account['telephone'] : ''}"/></label>
+       <label>Email <input type="text" name="billTo.email"/></label></p>
+
     <button type="submit">Place Order</button>
 </form>
 </body>
