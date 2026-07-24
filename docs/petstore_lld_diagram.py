@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 """
 Java Pet Store 1.3.1_02 — Low-Level Design / class-level diagram generator.
 
@@ -244,7 +245,7 @@ g.edge("PurchaseOrderMDB", "SupplierOrderMDB",
 g.edge("SupplierOrderMDB", "OrderApprovalMDB",
        label="jms/  invoice (XML)", constraint="false")
 
-out = "/Users/vishakvj/Downloads/pet-project/petstore_lld"
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "petstore_lld")
 g.render(out, format="png", cleanup=True)
 g.render(out, format="svg", cleanup=True)
 print("Wrote", out + ".png and .svg")

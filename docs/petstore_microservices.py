@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 """
 Pet Store — target microservices decomposition (traffic/caching driven).
 Plan-only diagram: 5 services, database-per-service, JWT auth, JMS backbone.
@@ -80,6 +81,6 @@ g.edge("cart","order",label="JMS PurchaseOrderQueue (PO)",constraint="false")
 g.edge("order","inv",label="JMS reserve stock",constraint="false")
 g.edge("inv","order",label="JMS InvoiceTopic",constraint="false")
 
-out="/Users/vishakvj/Downloads/pet-project/petstore_microservices"
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "petstore_microservices")
 g.render(out,format="png",cleanup=True); g.render(out,format="svg",cleanup=True)
 print("wrote",out+".png")

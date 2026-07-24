@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 """
 Java Pet Store — CURRENT architecture (as-built).
 8 Spring Boot services + embedded broker + shared libraries/SDKs.
@@ -142,5 +143,5 @@ imp("inventory", "msg"); imp("inventory", "authclient")
 imp("notify", "msg")
 imp("cartlib", "catsdk")
 
-g.render("/Users/vishakvj/Downloads/pet-project/petstore_architecture", cleanup=True)
+g.render(os.path.join(os.path.dirname(os.path.abspath(__file__)), "petstore_architecture"), cleanup=True)
 print("Wrote petstore_architecture.png / .svg")

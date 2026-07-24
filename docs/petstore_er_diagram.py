@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 """
 Java Pet Store 1.3.1_02 — full database ER diagram.
 
@@ -160,7 +161,7 @@ g.edge("so_join", "lineitem", label="", color=C_JOIN, arrowhead="none")
 g.edge("so", "inventory", label="fulfils via itemId", color=C_CMP, fontcolor=C_CMP,
        fontsize="9", style="dashed", arrowhead="none")
 
-out = "/Users/vishakvj/Downloads/pet-project/petstore_er"
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "petstore_er")
 g.render(out, format="png", cleanup=True)
 g.render(out, format="svg", cleanup=True)
 print("Wrote", out + ".png / .svg")

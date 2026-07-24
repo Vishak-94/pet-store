@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 """
 Java Pet Store — package / client-SDK dependency graph (as-built).
 Shows every app, the client SDK it PUBLISHES, the shared libraries, and every
@@ -87,5 +88,5 @@ imports_lib("opc", "msg")
 imports_lib("inventory", "msg")
 imports_lib("notify", "msg")
 
-g.render("/Users/vishakvj/Downloads/pet-project/petstore_packages", cleanup=True)
+g.render(os.path.join(os.path.dirname(os.path.abspath(__file__)), "petstore_packages"), cleanup=True)
 print("Wrote petstore_packages.png")

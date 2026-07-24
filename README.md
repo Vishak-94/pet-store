@@ -5,10 +5,13 @@
 A migration of the legacy **Java Pet Store 1.3.1_02** (J2EE 1.3 BluePrints — EJB 2.x CMP,
 JMS, Cloudscape, 4 `.ear` apps) to a modern **Spring Boot 3.3.5 / Java 21** system.
 
-![Architecture](petstore_architecture.png)
+![Architecture](docs/petstore_architecture.png)
 
-*(Full-resolution: [`petstore_architecture.svg`](petstore_architecture.svg) · regenerate with
-`python3 petstore_architecture.py`. Solid = HTTP/REST, dashed red = JMS, dotted grey = library/SDK imports.)*
+*(Full-resolution: [`docs/petstore_architecture.svg`](docs/petstore_architecture.svg) · package/SDK
+dependencies: [`docs/petstore_packages.png`](docs/petstore_packages.png) · regenerate with
+`python3 docs/petstore_architecture.py`. Solid = HTTP/REST, dashed red = JMS, dotted grey = library/SDK imports.)*
+
+*Design decisions & diagrams live in [`docs/`](docs/) (see also [`DECISIONS.md`](DECISIONS.md)).*
 
 The migration was approached *as if the legacy codebase were far larger*: work was broken
 into phased tasks, behaviour was pinned with **characterization tests** before changes, and

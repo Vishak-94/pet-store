@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 """
 Java Pet Store 1.3.1_02 — HIGH-LEVEL flow diagram.
 
@@ -117,7 +118,7 @@ g.edge("opc", "supplier", label="JMS/SOAP  submitOrder  (forward PO)")
 g.edge("supplier", "opc", label="JMS  InvoiceTopic  (pub/sub) / SOAP submitInvoice")
 g.edge("admin", "opc", label="JMS  approve → OrderApproval", constraint="false")
 
-out = "/Users/vishakvj/Downloads/pet-project/petstore_highlevel_flow"
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "petstore_highlevel_flow")
 g.render(out, format="png", cleanup=True)
 g.render(out, format="svg", cleanup=True)
 print("Wrote", out + ".png / .svg")

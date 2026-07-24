@@ -11,7 +11,8 @@ from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 
-BASE = "/Users/vishakvj/Downloads/pet-project"
+# This generator + all diagram images now live in docs/, so BASE is this file's dir.
+BASE = os.path.dirname(os.path.abspath(__file__))
 DIAGRAM = os.path.join(BASE, "petstore_lld.png")
 
 # ── palette ──────────────────────────────────────────────────────────────────
