@@ -1,0 +1,191 @@
+# admin-office-service — Low-Level Design
+
+Back-office **ADMIN console** on **port 8082** (legacy `admin.ear`), package root
+`com.petstore.warehouse`. See the repo skill
+[`../../.claude/skills/petstore-dev/SKILL.md`](../../.claude/skills/petstore-dev/SKILL.md) for the module
+map, auth model, and build/run; the module guide is [`../CLAUDE.md`](../CLAUDE.md).
+
+## Overview — the delegation pattern
+
+This service is a **thin presentation + proxy layer**. It owns **no order data** and runs **no
+persistence or messaging** (its `pom.xml` deliberately has no JPA/H2/JMS). Every order operation —
+listing, detail, approve, deny, atomic batch approval, and sales reporting — is **delegated to
+order-processing-service (the OPC)** over HTTP through the imported `OrderProcessingClient`
+(`order-processing-client`), exactly as the legacy `admin.ear` called `OPCAdminFacade`.
+
+Two front doors sit on the same delegate:
+
+- **`WarehouseUiController`** — a server-rendered Thymeleaf approval console (`/warehouse/**`); reads the
+  JWT from the `jwt` cookie.
+- **`WarehouseApiController`** — a JSON API (`/api/**`); reads the JWT from the `Authorization` header.
+
+Both forward the acting admin's Bearer token to the OPC, which re-enforces ADMIN and does the real work.
+`SecurityConfig` provides the `OrderProcessingClient` and `AuthClient` beans and gates every route to
+`ROLE_ADMIN` (login/actuator excepted). Login itself is delegated to `auth-service` via `AuthClient`.
+
+## Class diagram
+
+```mermaid
+classDiagram
+    class WarehouseServiceApplication {
+        +main(String[]) void
+    }
+
+    class WarehouseUiController {
+        -OrderProcessingClient opc
+        +orders(req, model) String
+        +approve(id, req) String
+        +deny(id, req) String
+        -jwt(req) String  «from cookie»
+    }
+
+    class WarehouseApiController {
+        -OrderProcessingClient opc
+        +ordersByStatus(status, req) OrdersByStatus
+        +approve(id, req) ResponseEntity
+        +deny(id, req) ResponseEntity
+        +order(id, req) ResponseEntity
+        +updateOrders(OrderApprovalDto, req) ResponseEntity
+        +sales(start, end, category, req) SalesReportDto
+        -bearer(req) String  «from header»
+    }
+
+    class WarehouseLoginController {
+        -AuthClient auth
+        +loginPage() String
+        +doLogin(user, pass, resp) String
+        +logout(resp) String
+    }
+
+    class ApiExceptionHandler {
+        +illegalState(e) ResponseEntity «409»
+        +notFound(e) ResponseEntity «404»
+    }
+
+    class SecurityConfig {
+        +jwtVerifier() JwtVerifier
+        +authClient(baseUrl) AuthClient
+        +orderProcessingClient(baseUrl) OrderProcessingClient
+        +filterChain(http, verifier) SecurityFilterChain
+    }
+
+    class OrderProcessingClient {
+        <<order-processing-client / calls OPC :8088>>
+        +ordersByStatus(status, bearer) OrdersByStatus
+        +getOrder(id, bearer) Optional~OrderView~
+        +approve(id, bearer) void
+        +deny(id, bearer) void
+        +updateOrders(OrderApprovalDto, bearer) void
+        +sales(start, end, category, bearer) SalesReportDto
+    }
+
+    class AuthClient {
+        <<auth-client>>
+        +login(user, pass) Optional~LoginResult~
+    }
+
+    class OrderProcessingService {
+        <<order-processing-service :8088>>
+        owns order data + workflow
+    }
+
+    WarehouseUiController --> OrderProcessingClient : delegates
+    WarehouseApiController --> OrderProcessingClient : delegates
+    WarehouseLoginController --> AuthClient : delegates login
+    SecurityConfig ..> OrderProcessingClient : @Bean
+    SecurityConfig ..> AuthClient : @Bean
+    OrderProcessingClient ..> OrderProcessingService : HTTP + Bearer
+    note for WarehouseApiController "owns NO data — pure proxy"
+```
+
+## Sequence — admin approve / deny (console)
+
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant UI as WarehouseUiController<br/>(/warehouse/orders/{id}/approve)
+    participant Client as OrderProcessingClient
+    participant OPC as order-processing-service :8088
+
+    Admin->>UI: POST /warehouse/orders/{id}/approve (jwt cookie)
+    UI->>UI: jwt(req) — read 'jwt' cookie
+    UI->>Client: approve(id, bearer)
+    Client->>OPC: POST /api/orders/{id}/approve (Bearer)
+    OPC->>OPC: verify ADMIN, transition PENDING→APPROVED,<br/>publish OrderApprovedEvent + OrderStatusEvent
+    OPC-->>Client: 200
+    Client-->>UI: void
+    UI-->>Admin: redirect /warehouse/orders (deny is identical → /deny)
+```
+
+## Sequence — batch approval (JSON API)
+
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant API as WarehouseApiController<br/>(POST /api/orders/approvals)
+    participant Client as OrderProcessingClient
+    participant OPC as order-processing-service :8088
+
+    Admin->>API: POST /api/orders/approvals<br/>body: OrderApprovalDto{orders:[{orderId,newStatus}]}
+    API->>API: bearer(req) — read Authorization header
+    API->>Client: updateOrders(approval, bearer)
+    Client->>OPC: POST /api/orders/approvals (Bearer, JSON body)
+    OPC->>OPC: verify ADMIN, apply all changes atomically<br/>(legacy updateOrders/OrderApproval)
+    OPC-->>Client: 200
+    Client-->>API: void
+    API-->>Admin: 200 OK
+```
+
+## Sequence — sales report (JSON API)
+
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant API as WarehouseApiController<br/>(GET /api/sales)
+    participant Client as OrderProcessingClient
+    participant OPC as order-processing-service :8088
+
+    Admin->>API: GET /api/sales?start=&end=&category= (Bearer)
+    API->>Client: sales(start, end, category, bearer)
+    Client->>OPC: GET /api/sales?start=&end=&category= (Bearer)
+    OPC->>OPC: verify ADMIN, aggregate revenue/qty<br/>(legacy getChartInfo)
+    OPC-->>Client: SalesReportDto{groupBy, buckets[]}
+    Client-->>API: SalesReportDto
+    API-->>Admin: 200 SalesReportDto (JSON)
+```
+
+## Endpoint table
+
+| Method | Path | Kind | ADMIN | Delegates to (OPC via `OrderProcessingClient`) |
+|--------|------|------|:-----:|-----------------------------------------------|
+| GET  | `/warehouse/orders` | UI | yes | `ordersByStatus("PENDING")` + `getOrder(id)` per row |
+| POST | `/warehouse/orders/{id}/approve` | UI | yes | `approve(id)` |
+| POST | `/warehouse/orders/{id}/deny` | UI | yes | `deny(id)` |
+| GET  | `/warehouse/login` | UI | no (permitAll) | — (renders form) |
+| POST | `/warehouse/login` | UI | no (permitAll) | `AuthClient.login` (→ auth-service) |
+| POST | `/warehouse/logout` | UI | no (permitAll) | — (clears `jwt` cookie) |
+| GET  | `/` | UI | authenticated | redirect → `/warehouse/orders` |
+| GET  | `/api/orders?status=` | API | yes | `ordersByStatus(status)` |
+| GET  | `/api/orders/{id}` | API | yes | `getOrder(id)` → 404 if empty |
+| POST | `/api/orders/{id}/approve` | API | yes | `approve(id)` |
+| POST | `/api/orders/{id}/deny` | API | yes | `deny(id)` |
+| POST | `/api/orders/approvals` | API | yes | `updateOrders(OrderApprovalDto)` — atomic batch |
+| GET  | `/api/sales?start=&end=&category=` | API | yes | `sales(start, end, category)` |
+| GET  | `/actuator/**` | ops | no (permitAll) | — |
+
+## Design decisions / invariants
+
+1. **Delegate, never store.** No JPA/H2/JMS dependency; the OPC is the single authoritative order store.
+   Add admin features by extending `OrderProcessingClient` + a controller method + a role rule — never a
+   local persistence layer. (Repo ADRs: [`../../DECISIONS.md`](../../DECISIONS.md).)
+2. **Thin controllers.** Read token → call client → map. No business logic (thresholds, transitions,
+   aggregation) is duplicated here.
+3. **ADMIN role, defence in depth.** `SecurityConfig` gates every order/sales/users route to `ROLE_ADMIN`
+   and forwards the Bearer token; the OPC re-checks ADMIN.
+4. **Verify-only auth.** Bundled RS256 **public** key (`auth-client`); login delegated to `auth-service`.
+   Cannot mint tokens; holds no credentials.
+5. **Two token sources.** UI = `jwt` cookie; API = `Authorization` header. Stateless session, CSRF disabled.
+6. **Error mapping.** `ApiExceptionHandler` maps `IllegalStateException`→409, `IllegalArgumentException`→404;
+   `SecurityConfig` returns JSON 401/403 for `/api/**`, redirects to login for UI routes.
+7. **Legacy-faithful names.** Package `com.petstore.warehouse` and `/warehouse/**` routes come from the
+   legacy `admin.ear`; keep them. Parity baseline: [`../../docs/PARITY_AUDIT.md`](../../docs/PARITY_AUDIT.md).
