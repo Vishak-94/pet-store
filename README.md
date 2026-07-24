@@ -1,7 +1,6 @@
 # Java Pet Store — Migrated to Spring Boot 3.x / Java 21
 
-**Project URL:** _<!-- TODO: paste your public GitHub URL here after pushing, e.g.
-https://github.com/<you>/petstore-springboot-migration -->_ **(not yet published — see [Publishing to GitHub](#publishing-to-github))**
+**Project URL:** https://github.com/Vishak-94/pet-store
 
 A migration of the legacy **Java Pet Store 1.3.1_02** (J2EE 1.3 BluePrints — EJB 2.x CMP,
 JMS, Cloudscape, 4 `.ear` apps) to a modern **Spring Boot 3.3.5 / Java 21** system.
