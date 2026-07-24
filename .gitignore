@@ -40,10 +40,9 @@ __pycache__/
 .venv/
 venv/
 
-# ---- Secrets: never commit real keys ----
-# NOTE: the RSA keypair under auth-service/keys and the app resources is a
-# DEMO keypair generated for local dev only. For a real deployment these would
-# be excluded and injected as secrets. Kept in-repo here so the demo runs.
-# (uncomment to exclude if regenerating for production)
-# auth-service/keys/private_key*.pem
-# **/auth-private-key.pem
+# ---- Secrets: never commit private keys (this is a PUBLIC repo) ----
+# The RSA PRIVATE key is generated locally by ./generate-keys.sh and must NOT be
+# committed. The PUBLIC key (petstore-auth-public.pem) is meant to be shared and
+# IS committed so verifier services work out of the box.
+auth-service/keys/private_key*.pem
+auth-service/app/resources/auth-private-key.pem

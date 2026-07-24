@@ -33,6 +33,7 @@ No database or message broker to install — an in-memory **H2** database per se
 ## Build & Run (one command each)
 
 ```bash
+./generate-keys.sh # one-time: create the RSA keypair auth-service signs tokens with
 ./build-all.sh     # builds + installs all modules in dependency order
 ./run-all.sh       # starts all services (broker host first), waits for health
 # ... use the app ...
@@ -122,8 +123,11 @@ Full decision log — every option weighed and the rationale — is in **[`DECIS
 
 ## Notes / known limitations
 
-- The RSA keypair under `auth-service` is a **demo key** committed for local runs; a real
-  deployment would inject it as a secret (and serve the public key via JWKS for rotation).
+- **Auth keys:** the RSA **private** key is generated locally by `./generate-keys.sh` and is
+  *git-ignored* (never committed). Only the **public** key is committed (it's meant to be
+  shared — that's how verifier services validate tokens without being able to forge them). A
+  real deployment would inject the private key as a secret and serve the public key via JWKS
+  for rotation.
 - Order ids currently come from an in-memory counter (restart resets it) — the known follow-up
   is a persistent / snowflake id + checkout idempotency (see `DECISIONS.md`).
 - MongoDB (the optional stretch goal) is **not** implemented — all services use H2.
