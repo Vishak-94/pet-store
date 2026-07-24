@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"/><title>Checkout — Pet Store</title></head>
+<body>
+<div th:replace="~{fragments/nav :: navbar}"></div>
+<h1>Checkout</h1>
+<p th:if="${error}" style="color:red" th:text="${error}">error</p>
+
+<h2>Order summary</h2>
+<table border="1" cellpadding="4">
+    <thead><tr><th>Item</th><th>Name</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+    <tbody>
+    <tr th:each="i : ${items}">
+        <td th:text="${i.itemId}">id</td>
+        <td th:text="${i.productName}">name</td>
+        <td th:text="${i.quantity}">1</td>
+        <td th:text="${i.unitCost}">0.0</td>
+        <td th:text="${i.totalCost}">0.0</td>
+    </tr>
+    <tr th:if="${#lists.isEmpty(items)}"><td colspan="5"><em>Your cart is empty.</em></td></tr>
+    </tbody>
+    <tfoot><tr><td colspan="4"><strong>Subtotal</strong></td><td th:text="${subtotal}">0.0</td></tr></tfoot>
+</table>
+
+<h2>Billing &amp; Shipping</h2>
+<!-- 'customer' is a CustomerView from customer-service: account/profile are Maps, cardMasked a String. -->
+<div th:if="${customer != null and customer.account != null}">
+    <p><span th:text="${customer.account['givenName']}">First</span>
+       <span th:text="${customer.account['familyName']}">Last</span></p>
+    <p th:text="${customer.account['streetName1']}">street</p>
+    <p><span th:text="${customer.account['city']}">city</span>,
+       <span th:text="${customer.account['state']}">st</span>
+       <span th:text="${customer.account['zipCode']}">zip</span></p>
+    <p th:if="${customer.cardMasked != null}">Card: <span th:text="${customer.cardMasked}">**** 1111</span></p>
+</div>
+<div th:unless="${customer != null and customer.account != null}">
+    <p><em>No saved address on file. Order will use your username email.</em></p>
+</div>
+
+<form th:action="@{/checkout}" method="post" th:unless="${#lists.isEmpty(items)}">
+    <button type="submit">Place Order</button>
+</form>
+</body>
+</html>

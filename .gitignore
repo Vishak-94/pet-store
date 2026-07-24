@@ -1,0 +1,49 @@
+# ---- Build output ----
+target/
+build/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---- IDE ----
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
+# ---- Logs / runtime ----
+*.log
+/tmp/
+logs/
+
+# ---- PowerPoint lock files ----
+~$*.pptx
+
+# ---- Legacy input source (the app we migrated FROM — reference only, not part
+#      of the migrated deliverable). Kept locally, excluded from the repo. ----
+petstore1.3.1_02/
+petstore-1_3_1_02.zip
+
+# ---- Python (diagram/ppt generators) ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---- Secrets: never commit real keys ----
+# NOTE: the RSA keypair under auth-service/keys and the app resources is a
+# DEMO keypair generated for local dev only. For a real deployment these would
+# be excluded and injected as secrets. Kept in-repo here so the demo runs.
+# (uncomment to exclude if regenerating for production)
+# auth-service/keys/private_key*.pem
+# **/auth-private-key.pem

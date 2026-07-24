@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: inventory-service
+  datasource:
+    url: jdbc:h2:mem:inventory;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+  sql:
+    init:
+      mode: always
+  h2:
+    console:
+      enabled: true
+  # Connect to the SHARED broker hosted by the monolith (tcp://localhost:61616).
+  # Consumes ApprovedOrderQueue, publishes InvoiceQueue.
+  artemis:
+    mode: native
+    broker-url: tcp://localhost:61616
+
+server:
+  port: 8085
+
+# Central IdP: inventory-service delegates login to auth-service and verifies its
+# RS256 tokens with the bundled public key (auth-client). Holds no credentials.
+services:
+  auth:
+    base-url: ${AUTH_SERVICE_URL:http://localhost:8086}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.petstore: INFO

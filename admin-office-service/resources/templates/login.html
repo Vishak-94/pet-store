@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"/><title>Warehouse — Staff Sign On</title></head>
+<body>
+<h1>Warehouse — Staff Sign On</h1>
+<p th:if="${error}" style="color:red" th:text="${error}">error</p>
+<p th:if="${param.loggedout}" style="color:green">You have been signed off.</p>
+<form th:action="@{/warehouse/login}" method="post">
+    <p><label>Username: <input type="text" name="username"/></label></p>
+    <p><label>Password: <input type="password" name="password"/></label></p>
+    <p><button type="submit">Sign On</button></p>
+</form>
+<p><em>Staff only. Use an admin account (e.g. admin / admin).</em></p>
+</body>
+</html>

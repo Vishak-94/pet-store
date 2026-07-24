@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.petstore</groupId>
+    <artifactId>auth-service-parent</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+    <name>auth-service (parent)</name>
+    <description>Central identity provider (IdP): the single token issuer for all users
+        (customers + staff). Builds the importable auth-client (verify + login) and the
+        auth-service app together. RS256 — only auth-service holds the private key.</description>
+
+    <modules>
+        <module>client</module>   <!-- auth-client: verifier + Spring filter + claims + login client -->
+        <module>app</module>      <!-- the auth-service IdP; depends on client -->
+    </modules>
+</project>

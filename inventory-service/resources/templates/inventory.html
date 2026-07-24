@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"/><title>Inventory — Supplier</title></head>
+<body>
+<div style="background:#eee;padding:8px;border-bottom:2px solid #C97C2F">
+    <b>Inventory — Supplier (Receiver)</b>
+    <span style="float:right">
+        <form th:action="@{/inventory/logout}" method="post" style="display:inline">
+            <button type="submit">Sign Off</button>
+        </form>
+    </span>
+</div>
+<h1>Inventory Levels &amp; Restock</h1>
+<table border="1" cellpadding="6">
+    <thead><tr><th>Item</th><th>Quantity</th><th>Restock (add)</th></tr></thead>
+    <tbody>
+    <tr th:each="e : ${stock}">
+        <td th:text="${e.key}">item</td>
+        <td th:text="${e.value}">0</td>
+        <td>
+            <form th:action="@{/inventory/restock}" method="post" style="display:inline">
+                <input type="hidden" name="itemId" th:value="${e.key}"/>
+                <input type="number" name="qty" min="1" value="10" size="4"/>
+                <button type="submit">Add stock</button>
+            </form>
+        </td>
+    </tr>
+    </tbody>
+</table>
+</body>
+</html>

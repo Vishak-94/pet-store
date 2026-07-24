@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<!-- Reusable add-to-cart quantity stepper. Calls POST /cart/set via fetch and
+     updates in place — no page redirect. Pass the itemId and current qty. -->
+<span th:fragment="stepper(itemId, qty)" class="stepper" th:attr="data-item=${itemId}">
+    <button type="button" onclick="stepCart(this,-1)">&minus;</button>
+    <span class="qty" th:text="${qty}">0</span>
+    <button type="button" onclick="stepCart(this,1)">+</button>
+    <span class="added" style="color:green;display:none">✓ in cart</span>
+</span>
+
+<!-- Shared script (include once per page via th:replace of the 'script' fragment) -->
+<script th:fragment="script">
+function stepCart(btn, delta) {
+    const box = btn.closest('.stepper');
+    const itemId = box.getAttribute('data-item');
+    const qtyEl = box.querySelector('.qty');
+    const newQty = Math.max(0, parseInt(qtyEl.textContent || '0', 10) + delta);
+    const body = new URLSearchParams({itemId: itemId, qty: newQty});
+    fetch('/cart/set', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body})
+        .then(r => r.json())
+        .then(d => {
+            qtyEl.textContent = d.qty;
+            const added = box.querySelector('.added');
+            if (added) added.style.display = d.qty > 0 ? 'inline' : 'none';
+            const badge = document.getElementById('cart-count');
+            if (badge) badge.textContent = d.count;
+        })
+        .catch(e => console.error('cart update failed', e));
+}
+</script>
+</body>
+</html>

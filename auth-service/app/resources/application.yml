@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: auth-service
+  datasource:
+    url: jdbc:h2:mem:auth;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+  sql:
+    init:
+      mode: always
+
+server:
+  port: 8086
+
+# RS256: auth-service holds the PRIVATE key (mints tokens). Verifiers hold only
+# the public key (bundled in auth-client). Never expose the private key.
+auth:
+  jwt:
+    private-key: classpath:auth-private-key.pem
+    ttl-seconds: 3600
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.petstore: INFO

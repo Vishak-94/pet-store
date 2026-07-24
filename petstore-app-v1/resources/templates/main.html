@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Pet Store — Welcome</title>
+</head>
+<body>
+<div th:replace="~{fragments/nav :: navbar}"></div>
+<h1 th:text="#{main.title}">Welcome to the Pet Store</h1>
+<form th:action="@{/search}" method="get">
+    <input type="text" name="keyword" placeholder="Search items"/>
+    <button type="submit" th:text="#{main.search}">Search</button>
+</form>
+<h2 th:text="#{main.categories}">Categories</h2>
+<ul>
+    <li th:each="c : ${categories}">
+        <a th:href="@{/category(id=${c.id})}" th:text="${c.name}">Category</a>
+        — <span th:text="${c.description}">desc</span>
+    </li>
+    <li th:if="${#lists.isEmpty(categories)}"><em>No categories.</em></li>
+</ul>
+</body>
+</html>

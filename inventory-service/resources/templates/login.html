@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"/><title>Inventory — Supplier Sign On</title></head>
+<body>
+<h1>Inventory — Supplier Sign On</h1>
+<p th:if="${error}" style="color:red" th:text="${error}">error</p>
+<p th:if="${param.loggedout}" style="color:green">You have been signed off.</p>
+<p th:if="${param.forbidden}" style="color:red">That account is not a supplier.</p>
+<form th:action="@{/inventory/login}" method="post">
+    <p><label>Username: <input type="text" name="username"/></label></p>
+    <p><label>Password: <input type="password" name="password"/></label></p>
+    <p><button type="submit">Sign On</button></p>
+</form>
+<p><em>Supplier only. Use a supplier account (e.g. supplier / supplier).</em></p>
+</body>
+</html>

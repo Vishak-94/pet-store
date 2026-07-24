@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: notification-service
+  # Connect to the SHARED broker; subscribe to InvoiceTopic (pub/sub).
+  artemis:
+    mode: native
+    broker-url: tcp://localhost:61616
+
+server:
+  port: 8087
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.petstore: INFO

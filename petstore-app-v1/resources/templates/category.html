@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"/><title>Category</title></head>
+<body>
+<div th:replace="~{fragments/nav :: navbar}"></div>
+<p><button type="button" onclick="history.back()">&larr; Back</button></p>
+<h1 th:text="${category != null ? category.name : 'Category'}">Category</h1>
+<p th:if="${category != null}" th:text="${category.description}">desc</p>
+<h2>Products</h2>
+<ul>
+    <li th:each="p : ${products}">
+        <a th:href="@{/product(id=${p.id})}" th:text="${p.name}">Product</a>
+        — <span th:text="${p.description}">desc</span>
+    </li>
+    <li th:if="${#lists.isEmpty(products)}"><em>No products.</em></li>
+</ul>
+</body>
+</html>

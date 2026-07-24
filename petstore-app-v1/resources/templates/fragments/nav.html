@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<body>
+<!-- Reusable top navigation bar. Shows Login/Register when anonymous,
+     the username + Logout when authenticated. -->
+<div th:fragment="navbar" style="background:#eee;padding:8px;margin-bottom:12px;border-bottom:2px solid #2E6DB4">
+    <a th:href="@{/}" th:text="'🏠 ' + #{nav.home}">🏠 Home</a> &nbsp;|&nbsp;
+    <a th:href="@{/cart}">🛒 <span th:text="#{nav.cart}">Cart</span> (<span id="cart-count" th:text="${cartCount} ?: 0">0</span>)</a>
+    <span style="float:right">
+        <!-- Language switcher — ?lang= is picked up by LocaleChangeInterceptor and persisted in the lang cookie -->
+        <span th:text="#{nav.language} + ':'">Language:</span>
+        <a th:href="@{''(lang='en_US')}">EN</a> ·
+        <a th:href="@{''(lang='ja_JP')}">日本語</a> ·
+        <a th:href="@{''(lang='zh_CN')}">中文</a>
+        &nbsp;|&nbsp;
+        <span sec:authorize="isAnonymous()">
+            <a th:href="@{/login}" th:text="#{nav.signon}">Sign On</a> &nbsp;|&nbsp;
+            <a th:href="@{/register-form}" th:text="#{nav.register}">Register</a>
+        </span>
+        <span sec:authorize="isAuthenticated()">
+            <span th:text="#{nav.signedOnAs}">Signed on as</span> <b sec:authentication="name">user</b>
+            &nbsp;|&nbsp;
+            <form th:action="@{/logout}" method="post" style="display:inline">
+                <button type="submit" th:text="#{nav.signoff}">Sign Off</button>
+            </form>
+        </span>
+    </span>
+</div>
+</body>
+</html>

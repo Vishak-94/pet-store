@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"/><title>Sign On — Pet Store</title></head>
+<body>
+<a th:href="@{/}">&larr; Home</a>
+<h1>Sign On</h1>
+<p th:if="${param.error}" style="color:red">Invalid username or password.</p>
+<p th:if="${param.logout}" style="color:green">You have been signed off.</p>
+<form th:action="@{/login}" method="post">
+    <p><label>Username: <input type="text" name="username"/></label></p>
+    <p><label>Password: <input type="password" name="password"/></label></p>
+    <p><button type="submit">Sign On</button></p>
+</form>
+<p>No account? <a th:href="@{/register-form}">Register</a></p>
+</body>
+</html>

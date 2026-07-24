@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.petstore</groupId>
+    <artifactId>customer-service-parent</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+    <name>customer-service (parent)</name>
+    <description>Aggregator: builds the client SDK and the server app together, single-versioned.</description>
+
+    <modules>
+        <module>client</module>   <!-- customer-service-client SDK (contract + DTOs + client) -->
+        <module>app</module>      <!-- the Spring Boot service; depends on client -->
+    </modules>
+</project>
