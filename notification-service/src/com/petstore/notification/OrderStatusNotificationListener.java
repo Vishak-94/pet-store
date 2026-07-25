@@ -1,5 +1,6 @@
 package com.petstore.notification;
 
+import com.petstore.messaging.Destinations;
 import com.petstore.messaging.events.OrderStatusEvent;
 import com.petstore.notification.mail.Email;
 import com.petstore.notification.mail.MailSender;
@@ -30,7 +31,13 @@ public class OrderStatusNotificationListener {
         this.mailSender = mailSender;
     }
 
-    @JmsListener(destination = "OrderStatusTopic", containerFactory = "topicFactory")
+    // Phase 4c: durable-subscription name for OrderStatusTopic. notification-service is currently
+    // the only OrderStatusTopic subscriber, but the name is still unique fleet-wide so a future
+    // second subscriber (durable+shared factory keys the subscription by NAME, not clientId) gets
+    // its own copy. Durable = a status change emitted while this service is down is retained and
+    // delivered on reconnect, so approval/denial/completion emails survive a restart.
+    @JmsListener(destination = Destinations.ORDER_STATUS_NAME, containerFactory = "topicFactory",
+            subscription = "notification-order-status")
     public void onStatus(OrderStatusEvent event) {
         log.info("Order status {} for order {} (correlationId={}) — notifying customer",
                 event.status(), event.orderId(), event.meta().correlationId());

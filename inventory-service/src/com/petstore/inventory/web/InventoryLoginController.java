@@ -1,6 +1,7 @@
 package com.petstore.inventory.web;
 
 import com.petstore.auth.client.AuthClient;
+import com.petstore.auth.client.AuthJwtFilter;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Controller;
@@ -20,6 +21,16 @@ import java.util.Optional;
 @Controller
 public class InventoryLoginController {
 
+    /** Cookie path scoping the JWT to the whole app. */
+    private static final String COOKIE_PATH = "/";
+    /** Thymeleaf view + redirect targets for the login flow. */
+    private static final String VIEW_LOGIN = "login";
+    private static final String REDIRECT_INVENTORY = "redirect:/inventory";
+    private static final String REDIRECT_LOGGED_OUT = "redirect:/inventory/login?loggedout";
+    /** Model attribute + message shown when credentials are rejected. */
+    private static final String ATTR_ERROR = "error";
+    private static final String MSG_INVALID_CREDENTIALS = "Invalid credentials";
+
     private final AuthClient auth;
 
     public InventoryLoginController(AuthClient auth) {
@@ -28,12 +39,12 @@ public class InventoryLoginController {
 
     @GetMapping("/")
     public String home() {
-        return "redirect:/inventory";
+        return REDIRECT_INVENTORY;
     }
 
     @GetMapping("/inventory/login")
     public String loginPage() {
-        return "login";
+        return VIEW_LOGIN;
     }
 
     @PostMapping("/inventory/login")
@@ -41,22 +52,23 @@ public class InventoryLoginController {
                           HttpServletResponse response, Model model) {
         Optional<AuthClient.LoginResult> result = auth.login(username, password);
         if (result.isEmpty()) {
-            model.addAttribute("error", "Invalid credentials");
-            return "login";
+            model.addAttribute(ATTR_ERROR, MSG_INVALID_CREDENTIALS);
+            return VIEW_LOGIN;
         }
-        Cookie c = new Cookie("jwt", result.get().token());
-        c.setPath("/");
+        // Drop the RS256 token in the same 'jwt' cookie the verify-only AuthJwtFilter reads.
+        Cookie c = new Cookie(AuthJwtFilter.JWT_COOKIE, result.get().token());
+        c.setPath(COOKIE_PATH);
         c.setHttpOnly(true);
         response.addCookie(c);
-        return "redirect:/inventory";
+        return REDIRECT_INVENTORY;
     }
 
     @PostMapping("/inventory/logout")
     public String logout(HttpServletResponse response) {
-        Cookie c = new Cookie("jwt", "");
-        c.setPath("/");
-        c.setMaxAge(0);
+        Cookie c = new Cookie(AuthJwtFilter.JWT_COOKIE, "");
+        c.setPath(COOKIE_PATH);
+        c.setMaxAge(0);   // expire immediately
         response.addCookie(c);
-        return "redirect:/inventory/login?loggedout";
+        return REDIRECT_LOGGED_OUT;
     }
 }

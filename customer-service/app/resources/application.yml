@@ -2,7 +2,11 @@ spring:
   application:
     name: customer-service
   datasource:
-    url: jdbc:h2:mem:customer;DB_CLOSE_DELAY=-1
+    # File-based H2 so customer PII/profile data SURVIVES restarts (was jdbc:h2:mem, wiped
+    # on shutdown). AUTO_SERVER lets the H2 console / a second JVM attach to the same file.
+    # data.sql uses idempotent MERGE, so re-seeding a populated file DB is safe. Path is
+    # overridable per env via CUSTOMER_DB_PATH.
+    url: jdbc:h2:file:${CUSTOMER_DB_PATH:./data/customer};AUTO_SERVER=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
@@ -15,7 +19,10 @@ spring:
       mode: always
   h2:
     console:
-      enabled: true
+      # Off by default — the console exposes arbitrary SQL over the PII/card table with no
+      # auth. Enabled only under the 'dev' profile (see application-dev.yml). NEVER enable
+      # in a shared/prod environment.
+      enabled: false
 
 server:
   port: 8081                  # distinct from the monolith (8080)

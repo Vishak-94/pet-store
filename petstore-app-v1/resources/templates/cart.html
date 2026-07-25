@@ -17,8 +17,8 @@
                 <button type="submit">Update</button>
             </form>
         </td>
-        <td th:text="${i.unitCost}">0.0</td>
-        <td th:text="${i.totalCost}">0.0</td>
+        <td th:text="${#numbers.formatCurrency(i.unitCost)}">$0.00</td>
+        <td th:text="${#numbers.formatCurrency(i.totalCost)}">$0.00</td>
         <td>
             <form th:action="@{/cart/delete}" method="post" style="display:inline">
                 <input type="hidden" name="itemId" th:value="${i.itemId}"/>
@@ -28,7 +28,7 @@
     </tr>
     <tr th:if="${#lists.isEmpty(items)}"><td colspan="6"><em>Your cart is empty.</em></td></tr>
     </tbody>
-    <tfoot><tr><td colspan="4"><strong>Subtotal</strong></td><td colspan="2" th:text="${subtotal}">0.0</td></tr></tfoot>
+    <tfoot><tr><td colspan="4"><strong>Subtotal</strong></td><td colspan="2" th:text="${#numbers.formatCurrency(subtotal)}">$0.00</td></tr></tfoot>
 </table>
 <p th:unless="${#lists.isEmpty(items)}">
     <a th:href="@{/checkout}"><button>Proceed to Checkout</button></a>

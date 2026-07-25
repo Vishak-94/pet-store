@@ -32,7 +32,8 @@ src/com/petstore/messaging/
   EventMeta.java          envelope record: eventId, type, occurredAt, correlationId
   Events.java             EventMeta factory: meta(type, correlationId) / meta(type)
   MessagingConfig.java    @Configuration @EnableJms — TYPE_IDS map, jacksonJmsMessageConverter,
-                          queueFactory (pubSub=false), topicFactory (pubSub=true)
+                          queueFactory (pubSub=false), topicFactory (pubSub=true,
+                          JMS 2.0 durable+shared — each topic @JmsListener needs a unique `subscription` name)
   MessagePublisher.java   @Component — publish(Destination, event); stamps _type; queue/topic templates
   events/
     PurchaseOrderEvent.java   TYPE="PurchaseOrder"; nested records Line + ContactInfo
@@ -75,6 +76,14 @@ installs it first for this reason.
    fan-out to every subscriber (broadcast facts: `InvoiceTopic`, `OrderStatusTopic`). The
    publisher and listener factories read `Destination.topic()` to pick pub/sub — pick the
    right kind when adding a destination; do not send a command over a topic.
+4b. **`topicFactory` is durable + shared (JMS 2.0); every topic `@JmsListener` MUST set a
+   unique `subscription` name.** The factory sets `subscriptionDurable=true` +
+   `subscriptionShared=true`, so a subscription is keyed by its NAME, not a connection clientId
+   (deliberately — the factory is one shared bean and notification-service attaches two topic
+   listeners to it, so a single clientId would collide). Two subscribers that must each get
+   their own copy of a topic MUST use DISTINCT names (e.g. `opc-invoice` vs `notification-invoice`
+   on `InvoiceTopic`); a shared name makes them COMPETE for messages and silently breaks fan-out.
+   Durable subs also require broker persistence (see root `docker-compose.yml`, Phase 4b).
 5. **After-commit publishing is enforced by the SERVICES, not here.** `MessagePublisher`
    sends immediately when called. Each producing service's gateway wraps the call in a
    `TransactionSynchronization` so a rolled-back transaction never publishes. Do not try to

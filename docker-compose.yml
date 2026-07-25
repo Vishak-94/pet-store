@@ -1,0 +1,76 @@
+# Externalized JMS broker for the Pet Store fleet.
+#
+# Historically the storefront (petstore-app-v1) hosted an *embedded* ActiveMQ
+# Artemis broker in its own JVM and opened a TCP acceptor on :61616 for the other
+# services. That coupled the broker's lifecycle to the storefront. This compose
+# file runs Artemis as its own standalone container so every service — including
+# the storefront — is now a plain client of it (spring.artemis.mode: native).
+#
+# Phase 4a externalized the broker. Phase 4b/4c/4d now make it DURABLE:
+#   - 4b (persistence): the broker's data dir is backed by the named volume
+#     `petstore-broker-data`, so the journal/bindings survive `docker compose down`
+#     and container restarts. `--no-fsync` (which traded durability for speed on the
+#     old in-memory broker) is dropped so writes are actually flushed to that volume.
+#   - 4c (durable topic subscriptions): purely client-side — see MessagingConfig's
+#     topicFactory (JMS 2.0 durable + shared, keyed by subscription NAME, no clientId)
+#     and the unique `subscription` name on each topic @JmsListener. Durable subs need
+#     the persistence enabled here to retain messages for an offline subscriber.
+#   - 4d (DLQ + redelivery): configured in the repo-managed broker.xml mounted below,
+#     which tunes redelivery backoff + a delivery-attempt cap for our destinations.
+# Anonymous auth is still kept (clients send no credentials today); broker auth
+# remains a later hardening step.
+services:
+  # 4b: one-shot init that fixes ownership of the fresh named volume. Docker creates a new
+  # named volume owned by root:root, but Artemis runs as the unprivileged `artemis` user
+  # (uid/gid 1001) and must create its lock + journal files in data/ — root ownership makes
+  # that fail with "IOException: No such file or directory" on the server lock. The image
+  # has no data/ dir to seed the volume's ownership from, so we chown it once (as root) before
+  # the broker starts. Runs to completion, then the broker waits on it via depends_on.
+  broker-init:
+    image: apache/activemq-artemis:2.37.0
+    container_name: petstore-broker-init
+    user: root
+    entrypoint: ["sh", "-c", "chown -R 1001:1001 /var/lib/artemis-instance/data"]
+    volumes:
+      - petstore-broker-data:/var/lib/artemis-instance/data
+    restart: "no"
+
+  broker:
+    image: apache/activemq-artemis:2.37.0
+    container_name: petstore-broker
+    depends_on:
+      broker-init:
+        condition: service_completed_successfully
+    ports:
+      - "61616:61616"   # CORE/JMS acceptor — the port every service connects to
+      - "8161:8161"     # management console + Jolokia (http://localhost:8161, admin/admin)
+    environment:
+      # Anonymous login preserves today's behaviour: the fleet's JMS clients send
+      # no username/password. Enabling broker auth is a later Phase-4 hardening step
+      # (it must land together with credentials in every service's application.yml).
+      ANONYMOUS_LOGIN: "true"
+      # 4b: keep --no-autotune (skips the startup disk-benchmark; irrelevant to durability)
+      # but DROP --no-fsync so the journal is actually flushed to the persistent volume.
+      ARTEMIS_EXTRA_ARGS: "--no-autotune"
+    volumes:
+      # 4d: repo-managed broker.xml (DLQ + redelivery tuning for our destinations). It is mounted
+      # into etc-override/, NOT etc/ directly: the image entrypoint runs `artemis create` (which
+      # generates bin/artemis + the stock etc/) ONLY when etc/broker.xml is absent, then copies any
+      # etc-override/* over the freshly-created etc/. Mounting into etc/ directly would make the
+      # entrypoint think the instance already exists and skip creation, leaving no bin/artemis.
+      # Read-only — the container never rewrites it.
+      - ./broker/etc/broker.xml:/var/lib/artemis-instance/etc-override/broker.xml:ro
+      # 4b: named volume holds the Artemis journal/bindings/paging so messages persist
+      # across restarts. This is what was intentionally missing in Phase 4a.
+      - petstore-broker-data:/var/lib/artemis-instance/data
+    healthcheck:
+      # Consider the broker up once the CORE acceptor accepts a TCP connection.
+      test: ["CMD-SHELL", "curl -sf http://localhost:8161 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+# 4b: named volume — its lifecycle is independent of the container, so `docker compose
+# restart`/`down` (without -v) keeps the message journal. Remove with `docker compose down -v`.
+volumes:
+  petstore-broker-data:

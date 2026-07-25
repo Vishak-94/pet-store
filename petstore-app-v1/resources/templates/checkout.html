@@ -14,12 +14,12 @@
         <td th:text="${i.itemId}">id</td>
         <td th:text="${i.productName}">name</td>
         <td th:text="${i.quantity}">1</td>
-        <td th:text="${i.unitCost}">0.0</td>
-        <td th:text="${i.totalCost}">0.0</td>
+        <td th:text="${#numbers.formatCurrency(i.unitCost)}">$0.00</td>
+        <td th:text="${#numbers.formatCurrency(i.totalCost)}">$0.00</td>
     </tr>
     <tr th:if="${#lists.isEmpty(items)}"><td colspan="5"><em>Your cart is empty.</em></td></tr>
     </tbody>
-    <tfoot><tr><td colspan="4"><strong>Subtotal</strong></td><td th:text="${subtotal}">0.0</td></tr></tfoot>
+    <tfoot><tr><td colspan="4"><strong>Subtotal</strong></td><td th:text="${#numbers.formatCurrency(subtotal)}">$0.00</td></tr></tfoot>
 </table>
 
 <h2>Billing &amp; Shipping</h2>
@@ -37,7 +37,12 @@
     <p><em>No saved address on file. Order will use your username email.</em></p>
 </div>
 
-<form th:action="@{/checkout}" method="post" th:unless="${#lists.isEmpty(items)}">
+<form id="checkoutForm" th:action="@{/checkout}" method="post" th:unless="${#lists.isEmpty(items)}">
+    <!-- Idempotency token: the encrypted order id reserved by POST /pre-checkout (fetched below),
+         echoed back on submit so a refresh / double-click replay carries the same value and is
+         de-duplicated server-side. Populated by JS; the Place Order button stays disabled until
+         the reservation arrives. -->
+    <input type="hidden" id="orderKey" name="orderKey"/>
     <!-- Ship-to / bill-to collected + validated at checkout, as legacy OrderHTMLAction did.
          Required (*): first/last name, street, city, state, zip, telephone (both sides). -->
     <h3>Ship-To Address</h3>
@@ -80,7 +85,31 @@
             th:value="${customer != null and customer.account != null ? customer.account['telephone'] : ''}"/></label>
        <label>Email <input type="text" name="billTo.email"/></label></p>
 
-    <button type="submit">Place Order</button>
+    <button type="submit" id="placeOrderBtn" disabled>Place Order</button>
 </form>
+
+<!-- Reserve a server-minted order id (POST /pre-checkout) and stash the encrypted token in the
+     hidden field. The button is enabled only once the token is in place, so the submit always
+     carries a valid reservation and the server can de-duplicate a refresh / double-click. -->
+<script th:inline="none">
+    (function () {
+        var form = document.getElementById('checkoutForm');
+        if (!form) { return; }                          // empty cart → no form rendered
+        var keyField = document.getElementById('orderKey');
+        var btn = document.getElementById('placeOrderBtn');
+        fetch('/pre-checkout', { method: 'POST', headers: { 'Accept': 'application/json' } })
+            .then(function (r) { if (!r.ok) { throw new Error('pre-checkout ' + r.status); } return r.json(); })
+            .then(function (data) {
+                keyField.value = data.orderKey;
+                btn.disabled = false;
+            })
+            .catch(function (e) {
+                btn.textContent = 'Checkout unavailable — please refresh';
+                console.error('pre-checkout failed', e);
+            });
+        // Guard against a double-submit within the same page: disable on first submit.
+        form.addEventListener('submit', function () { btn.disabled = true; });
+    })();
+</script>
 </body>
 </html>

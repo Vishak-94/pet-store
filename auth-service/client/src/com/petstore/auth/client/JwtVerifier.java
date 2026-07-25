@@ -32,9 +32,9 @@ public class JwtVerifier {
     public AuthClaims verify(String token) {
         Claims c = Jwts.parser().verifyWith(publicKey).build()
                 .parseSignedClaims(token).getPayload();
-        List<String> roles = c.get("roles", List.class);
+        List<String> roles = c.get(AuthClaims.CLAIM_ROLES, List.class);
         return new AuthClaims(
-                c.get("uid", String.class),
+                c.get(AuthClaims.CLAIM_USER_ID, String.class),
                 c.getSubject(),
                 roles == null ? List.of() : roles);
     }

@@ -9,4 +9,10 @@ for p in "${PORTS[@]}"; do
     kill "$pid" 2>/dev/null || true
   fi
 done
+
+# Stop the externalized JMS broker container (started by run-all.sh).
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  echo "stopping broker container"
+  docker compose down >/dev/null 2>&1 || true
+fi
 echo "done."

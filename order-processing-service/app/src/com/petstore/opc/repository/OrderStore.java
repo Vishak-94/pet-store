@@ -22,6 +22,9 @@ public interface OrderStore {
 
     List<String> orderIdsByStatus(OrderStatus status);
 
+    /** Every order, most-recently-received first (for the admin all-orders overview). */
+    List<WarehouseOrder> findAllByCreatedDesc();
+
     /**
      * Aggregate revenue (Σ qty·unitPrice) + quantity (Σ qty) for orders received in
      * [start, end]. When {@code categoryId} is null the report is grouped by category;

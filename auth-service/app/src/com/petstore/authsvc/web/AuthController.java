@@ -1,5 +1,6 @@
 package com.petstore.authsvc.web;
 
+import com.petstore.auth.client.AuthClient;
 import com.petstore.authsvc.domain.AccountEntity;
 import com.petstore.authsvc.security.JwtIssuer;
 import com.petstore.authsvc.service.AuthService;
@@ -20,6 +21,12 @@ import java.util.Map;
 @RestController
 public class AuthController {
 
+    /** Response field for the auth scheme; pairs with the token so clients send {@code Authorization: Bearer <token>}. */
+    private static final String FIELD_TOKEN_TYPE = "tokenType";
+    private static final String TOKEN_TYPE_BEARER = "Bearer";
+    private static final String FIELD_ERROR = "error";
+    private static final String ERROR_INVALID_CREDENTIALS = "invalid_credentials";
+
     private final AuthService auth;
     private final JwtIssuer jwt;
 
@@ -31,17 +38,24 @@ public class AuthController {
     public record LoginRequest(String userName, String password) {
     }
 
+    /**
+     * Authenticate a username/password (BCrypt check in {@link AuthService}) and, on success,
+     * mint an RS256 token carrying the account's userId + roles. Returns
+     * {@code {token, tokenType:"Bearer", userId, roles}} on success, or 401 with
+     * {@code {error:"invalid_credentials"}} on any failure (unknown user or bad password —
+     * the two are deliberately indistinguishable to avoid user enumeration).
+     */
     @PostMapping("/auth/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest req) {
         AccountEntity account = auth.authenticate(req.userName(), req.password()).orElse(null);
         if (account == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "invalid_credentials"));
+                    .body(Map.of(FIELD_ERROR, ERROR_INVALID_CREDENTIALS));
         }
         List<String> roles = List.of(account.getRole());
         String token = jwt.issue(account.getUserName(), account.getUserId(), roles);
         return ResponseEntity.ok(Map.of(
-                "token", token, "tokenType", "Bearer",
-                "userId", account.getUserId(), "roles", roles));
+                AuthClient.FIELD_TOKEN, token, FIELD_TOKEN_TYPE, TOKEN_TYPE_BEARER,
+                AuthClient.FIELD_USER_ID, account.getUserId(), AuthClient.FIELD_ROLES, roles));
     }
 }

@@ -1,11 +1,22 @@
 package com.petstore.opc.client;
 
+import java.time.Instant;
 import java.util.List;
 
 /** Wire DTOs for the order-processing admin facade. */
 public final class OrderDtos {
 
     private OrderDtos() {
+    }
+
+    /**
+     * Lightweight order summary for the admin "All Orders" overview — one row per
+     * order in a single call (no per-order fetch), carrying the workflow status and
+     * the order-received timestamp so the console can list every order sorted by
+     * recency. {@code created} is the PO poDate (see {@code WarehouseOrder.created}).
+     */
+    public record OrderSummaryDto(String orderId, String userId, double totalPrice,
+                                  String status, Instant created, int lineCount) {
     }
 
     /** A single line of an order. */

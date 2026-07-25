@@ -14,24 +14,32 @@ import org.springframework.web.bind.annotation.RequestParam;
 @Controller
 public class InventoryUiController {
 
+    /** Route paths + the Thymeleaf view / redirect targets. */
+    private static final String INVENTORY = "/inventory";
+    private static final String RESTOCK = "/inventory/restock";
+    private static final String VIEW_INVENTORY = "inventory";
+    private static final String REDIRECT_INVENTORY = "redirect:/inventory";
+    /** Model attribute carrying the stock-level map to the view. */
+    private static final String ATTR_STOCK = "stock";
+
     private final InventoryStore inventory;
 
     public InventoryUiController(InventoryStore inventory) {
         this.inventory = inventory;
     }
 
-    @GetMapping("/inventory")
+    @GetMapping(INVENTORY)
     public String inventory(Model model) {
-        model.addAttribute("stock", inventory.all());
-        return "inventory";
+        model.addAttribute(ATTR_STOCK, inventory.all());
+        return VIEW_INVENTORY;
     }
 
     /** Restock: add quantity to an item (the supplier "receiver" job). */
-    @PostMapping("/inventory/restock")
+    @PostMapping(RESTOCK)
     public String restock(@RequestParam String itemId, @RequestParam int qty) {
         if (qty > 0) {
             inventory.addQuantity(itemId, qty);
         }
-        return "redirect:/inventory";
+        return REDIRECT_INVENTORY;
     }
 }

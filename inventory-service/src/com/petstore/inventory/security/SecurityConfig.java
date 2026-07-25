@@ -7,10 +7,13 @@ import com.petstore.auth.client.JwtVerifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 /**
  * Verify-only security for the supplier service. Tokens are minted by auth-service
@@ -21,48 +24,79 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 public class SecurityConfig {
 
+    /** Default auth-service base URL when {@code services.auth.base-url} is not set. */
+    private static final String DEFAULT_AUTH_BASE_URL = "http://localhost:8086";
+
+    /** Public paths: health/metrics probes and the login/logout endpoints themselves. */
+    private static final String[] PUBLIC_MATCHERS = {"/actuator/**", "/inventory/login", "/inventory/logout"};
+    /** Protected surface: the receiver UI + inventory JSON API. */
+    private static final String[] INVENTORY_MATCHERS = {"/inventory/**", "/api/inventory/**"};
+    /** Roles (without Spring's {@code ROLE_} prefix) allowed on the inventory surface. */
+    private static final String ROLE_SUPPLIER = "SUPPLIER";
+    private static final String ROLE_ADMIN = "ADMIN";
+
+    /** JSON API prefix — requests under it get a JSON error, others a redirect to login. */
+    private static final String API_PREFIX = "/api/";
+    private static final String REDIRECT_LOGIN = "/inventory/login";
+    private static final String REDIRECT_FORBIDDEN = "/inventory/login?forbidden";
+    /** Error codes echoed in the JSON body for API auth failures. */
+    private static final String ERROR_UNAUTHORIZED = "unauthorized";
+    private static final String ERROR_FORBIDDEN = "forbidden";
+
     @Bean
     JwtVerifier jwtVerifier() {
         return new JwtVerifier(AuthPublicKey.bundled());   // public key only
     }
 
     @Bean
-    AuthClient authClient(@Value("${services.auth.base-url:http://localhost:8086}") String baseUrl) {
+    AuthClient authClient(@Value("${services.auth.base-url:" + DEFAULT_AUTH_BASE_URL + "}") String baseUrl) {
         return new AuthClient(baseUrl);
     }
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, JwtVerifier verifier) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, JwtVerifier verifier, Environment env) throws Exception {
+        // The H2 console (arbitrary SQL over the inventory table) is opened ONLY under the
+        // 'dev' profile — matching application-dev.yml which is the only place the console is
+        // enabled. In every other profile /h2-console/** is authenticated like any other path,
+        // and the frame-options relaxation it needs is not applied.
+        boolean devConsole = env.acceptsProfiles(Profiles.of("dev"));
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/**", "/inventory/login", "/inventory/logout").permitAll()
-                .requestMatchers("/inventory/**", "/api/inventory/**").hasAnyRole("SUPPLIER", "ADMIN")
-                .anyRequest().authenticated())
+            .authorizeHttpRequests(auth -> {
+                auth.requestMatchers(PUBLIC_MATCHERS).permitAll();
+                if (devConsole) {
+                    auth.requestMatchers(new AntPathRequestMatcher("/h2-console/**")).permitAll();
+                }
+                auth.requestMatchers(INVENTORY_MATCHERS).hasAnyRole(ROLE_SUPPLIER, ROLE_ADMIN)
+                    .anyRequest().authenticated();
+            })
             .exceptionHandling(e -> e
                 .authenticationEntryPoint((req, res, ex) -> {
-                    if (req.getRequestURI().startsWith("/api/")) {
-                        writeJsonStatus(res, jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED, "unauthorized");
+                    if (req.getRequestURI().startsWith(API_PREFIX)) {
+                        writeJsonStatus(res, jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED, ERROR_UNAUTHORIZED);
                     } else {
-                        res.sendRedirect("/inventory/login");
+                        res.sendRedirect(REDIRECT_LOGIN);
                     }
                 })
                 .accessDeniedHandler((req, res, ex) -> {
-                    if (req.getRequestURI().startsWith("/api/")) {
-                        writeJsonStatus(res, jakarta.servlet.http.HttpServletResponse.SC_FORBIDDEN, "forbidden");
+                    if (req.getRequestURI().startsWith(API_PREFIX)) {
+                        writeJsonStatus(res, jakarta.servlet.http.HttpServletResponse.SC_FORBIDDEN, ERROR_FORBIDDEN);
                     } else {
-                        res.sendRedirect("/inventory/login?forbidden");
+                        res.sendRedirect(REDIRECT_FORBIDDEN);
                     }
                 }))
             .addFilterBefore(new AuthJwtFilter(verifier), UsernamePasswordAuthenticationFilter.class);
+        if (devConsole) {
+            http.headers(h -> h.frameOptions(f -> f.sameOrigin()));   // H2 console renders in frames
+        }
         return http.build();
     }
 
     private static void writeJsonStatus(jakarta.servlet.http.HttpServletResponse res,
                                         int status, String error) throws java.io.IOException {
         res.setStatus(status);
-        res.setContentType("application/json");
+        res.setContentType(org.springframework.http.MediaType.APPLICATION_JSON_VALUE);
         res.getWriter().write("{\"error\":\"" + error + "\",\"status\":" + status + "}");
     }
 }

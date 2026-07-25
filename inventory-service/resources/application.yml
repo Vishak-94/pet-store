@@ -2,7 +2,11 @@ spring:
   application:
     name: inventory-service
   datasource:
-    url: jdbc:h2:mem:inventory;DB_CLOSE_DELAY=-1
+    # File-based H2 so inventory stock levels SURVIVE restarts (was jdbc:h2:mem, wiped on
+    # shutdown). AUTO_SERVER lets the H2 console / a second JVM attach to the same file.
+    # data.sql uses idempotent MERGE, so re-seeding a populated file DB is safe. Path is
+    # overridable per env via INVENTORY_DB_PATH.
+    url: jdbc:h2:file:${INVENTORY_DB_PATH:./data/inventory};AUTO_SERVER=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
@@ -15,7 +19,10 @@ spring:
       mode: always
   h2:
     console:
-      enabled: true
+      # Off by default — the console exposes arbitrary SQL over the inventory table with no
+      # auth. Enabled only under the 'dev' profile (see application-dev.yml). NEVER enable
+      # in a shared/prod environment.
+      enabled: false
   # Connect to the SHARED broker hosted by the monolith (tcp://localhost:61616).
   # Consumes ApprovedOrderQueue, publishes InvoiceQueue.
   artemis:

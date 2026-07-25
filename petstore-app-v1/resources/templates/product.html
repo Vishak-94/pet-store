@@ -13,7 +13,7 @@
     <tr th:each="i : ${items}">
         <td><a th:href="@{/item(id=${i.itemId})}" th:text="${i.itemId}">id</a></td>
         <td th:text="${i.description}">desc</td>
-        <td th:text="${i.listCost}">0.0</td>
+        <td th:text="${#numbers.formatCurrency(i.listCost)}">$0.00</td>
         <td><span th:replace="~{fragments/stepper :: stepper(${i.itemId}, ${cartQty.get(i.itemId)})}">stepper</span></td>
     </tr>
     <tr th:if="${#lists.isEmpty(items)}"><td colspan="4"><em>No items.</em></td></tr>

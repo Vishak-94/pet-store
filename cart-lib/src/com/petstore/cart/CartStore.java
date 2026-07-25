@@ -9,6 +9,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * In-memory cart store keyed by cart id — the microservice analog of the legacy
@@ -33,6 +35,8 @@ public class CartStore implements AutoCloseable {
         }
     }
 
+    private static final Logger LOG = Logger.getLogger(CartStore.class.getName());
+
     private final ConcurrentHashMap<String, CartEntry> carts = new ConcurrentHashMap<>();
     private final Duration ttl;
     private final ScheduledExecutorService sweeper;
@@ -50,7 +54,7 @@ public class CartStore implements AutoCloseable {
             return t;
         });
         this.sweeper.scheduleWithFixedDelay(
-                this::evictExpired, sweepIntervalSeconds, sweepIntervalSeconds, TimeUnit.SECONDS);
+                this::sweepQuietly, sweepIntervalSeconds, sweepIntervalSeconds, TimeUnit.SECONDS);
     }
 
     /**
@@ -80,6 +84,21 @@ public class CartStore implements AutoCloseable {
     void evictExpired() {
         Instant cutoff = Instant.now().minus(ttl);
         carts.values().removeIf(e -> e.lastAccess.isBefore(cutoff));
+    }
+
+    /**
+     * The scheduled entry point. {@code scheduleWithFixedDelay} <b>permanently cancels</b>
+     * the task if its run throws, which would silently stop TTL eviction for the life of the
+     * JVM (a slow memory leak). So any failure in a single sweep is caught and logged; the
+     * sweeper keeps running and retries on the next tick. {@link #evictExpired()} stays clean
+     * (and package-visible) so tests can assert eviction directly.
+     */
+    void sweepQuietly() {
+        try {
+            evictExpired();
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "cart TTL sweep failed; will retry next interval", e);
+        }
     }
 
     /** Current number of live carts. */

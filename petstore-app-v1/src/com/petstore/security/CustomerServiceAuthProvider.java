@@ -20,6 +20,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomerServiceAuthProvider implements AuthenticationProvider {
 
+    /** Spring Security's authority prefix — a role "ADMIN" becomes authority "ROLE_ADMIN". */
+    private static final String ROLE_PREFIX = "ROLE_";
+    /** Message on a rejected login (kept generic — never reveal which of user/password was wrong). */
+    private static final String BAD_CREDENTIALS_MSG = "Invalid username or password";
+
     private final AuthClient auth;
 
     public CustomerServiceAuthProvider(AuthClient auth) {
@@ -32,10 +37,10 @@ public class CustomerServiceAuthProvider implements AuthenticationProvider {
         String password = String.valueOf(authentication.getCredentials());
 
         AuthClient.LoginResult result = auth.login(username, password)
-                .orElseThrow(() -> new BadCredentialsException("Invalid username or password"));
+                .orElseThrow(() -> new BadCredentialsException(BAD_CREDENTIALS_MSG));
 
         var authorities = result.roles().stream()
-                .map(r -> new SimpleGrantedAuthority("ROLE_" + r)).toList();
+                .map(r -> new SimpleGrantedAuthority(ROLE_PREFIX + r)).toList();
         // Credentials = the JWT, so downstream calls can forward it as a Bearer token.
         var auth = new UsernamePasswordAuthenticationToken(username, result.token(), authorities);
         auth.setDetails(result.userId());   // stable userId for customer-service lookups

@@ -2,7 +2,11 @@ spring:
   application:
     name: catalog-service
   datasource:
-    url: jdbc:h2:mem:catalog;DB_CLOSE_DELAY=-1
+    # File-based H2 so catalog data SURVIVES restarts (was jdbc:h2:mem, wiped on shutdown).
+    # AUTO_SERVER lets the H2 console / a second JVM attach to the same file. data.sql uses
+    # idempotent MERGE, so re-seeding a populated file DB is safe. Path is overridable per
+    # env via CATALOG_DB_PATH.
+    url: jdbc:h2:file:${CATALOG_DB_PATH:./data/catalog};AUTO_SERVER=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password: ""

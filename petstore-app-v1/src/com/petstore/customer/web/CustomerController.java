@@ -5,6 +5,7 @@ import com.petstore.customer.client.CustomerDtos.CardDto;
 import com.petstore.customer.client.CustomerDtos.CustomerView;
 import com.petstore.customer.client.CustomerDtos.ProfileDto;
 import com.petstore.customer.client.CustomerServiceClient;
+import com.petstore.security.AuthenticatedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -31,6 +32,17 @@ public class CustomerController {
 
     private static final Logger log = LoggerFactory.getLogger(CustomerController.class);
 
+    /** Thymeleaf view for the account-edit page. */
+    private static final String VIEW_UPDATE_CUSTOMER = "update_customer";
+    /** Model attribute keys consumed by the update_customer template. */
+    private static final String ATTR_CUSTOMER = "customer";
+    private static final String ATTR_ERROR = "error";
+    private static final String ATTR_UPDATED = "updated";
+    /** User-facing error messages for the account-edit flow. */
+    private static final String MSG_SESSION_EXPIRED = "Your session has expired, please sign on again.";
+    private static final String MSG_INVALID_DETAILS = "Invalid account details.";
+    private static final String MSG_SERVICE_UNAVAILABLE = "Account service unavailable, please try again.";
+
     private final CustomerServiceClient customerClient;
 
     public CustomerController(CustomerServiceClient customerClient) {
@@ -40,8 +52,8 @@ public class CustomerController {
     /** Shows the account-edit form, pre-filled from the current customer profile. */
     @GetMapping("/customer")
     public String editForm(Authentication auth, Model model) {
-        model.addAttribute("customer", fetchCustomer(auth).orElse(null));
-        return "update_customer";
+        model.addAttribute(ATTR_CUSTOMER, fetchCustomer(auth).orElse(null));
+        return VIEW_UPDATE_CUSTOMER;
     }
 
     /**
@@ -72,8 +84,8 @@ public class CustomerController {
         String userId = userId(auth);
         String token = token(auth);
         if (token == null) {
-            model.addAttribute("error", "Your session has expired, please sign on again.");
-            return "update_customer";
+            model.addAttribute(ATTR_ERROR, MSG_SESSION_EXPIRED);
+            return VIEW_UPDATE_CUSTOMER;
         }
         try {
             customerClient.updateAccount(userId, new AccountDto(
@@ -85,17 +97,17 @@ public class CustomerController {
             }
             log.info("Updated customer {} via customer-service", userId);
         } catch (org.springframework.web.client.HttpClientErrorException.BadRequest e) {
-            model.addAttribute("error", "Invalid account details.");
-            model.addAttribute("customer", fetchCustomer(auth).orElse(null));
-            return "update_customer";
+            model.addAttribute(ATTR_ERROR, MSG_INVALID_DETAILS);
+            model.addAttribute(ATTR_CUSTOMER, fetchCustomer(auth).orElse(null));
+            return VIEW_UPDATE_CUSTOMER;
         } catch (org.springframework.web.client.RestClientException e) {
-            model.addAttribute("error", "Account service unavailable, please try again.");
-            model.addAttribute("customer", fetchCustomer(auth).orElse(null));
-            return "update_customer";
+            model.addAttribute(ATTR_ERROR, MSG_SERVICE_UNAVAILABLE);
+            model.addAttribute(ATTR_CUSTOMER, fetchCustomer(auth).orElse(null));
+            return VIEW_UPDATE_CUSTOMER;
         }
-        model.addAttribute("customer", fetchCustomer(auth).orElse(null));
-        model.addAttribute("updated", true);
-        return "update_customer";
+        model.addAttribute(ATTR_CUSTOMER, fetchCustomer(auth).orElse(null));
+        model.addAttribute(ATTR_UPDATED, true);
+        return VIEW_UPDATE_CUSTOMER;
     }
 
     private Optional<CustomerView> fetchCustomer(Authentication auth) {
@@ -119,6 +131,6 @@ public class CustomerController {
 
     /** The stable userId customer-service is keyed by (from the token), not the username. */
     private static String userId(Authentication auth) {
-        return auth.getDetails() instanceof String uid ? uid : auth.getName();
+        return AuthenticatedUser.userId(auth);
     }
 }

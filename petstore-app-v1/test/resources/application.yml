@@ -1,0 +1,20 @@
+# TEST-ONLY overrides — this whole broker block applies to `mvn test` only, never to live.
+#
+# In production the JMS broker is EXTERNALIZED: a standalone Artemis container
+# (docker-compose.yml) that every service, including this storefront, connects to as a
+# plain client (spring.artemis.mode=native, embedded.enabled=false in the main
+# application.yml). Previously the storefront HOSTED an embedded broker for the whole
+# fleet; that was removed when the broker moved to its own container.
+#
+# JMS itself is unchanged (queues + InvoiceTopic preserved) — only WHERE the broker runs
+# changed. Tests must not depend on a running container, so here we flip Artemis back to
+# an EMBEDDED in-VM broker: @SpringBootTest boots its own broker inside the test JVM.
+# Non-persistent, and with no TCP acceptor — nothing else connects during a test, so it
+# stays purely in-VM (no port opened). The artemis-jakarta-server dependency that powers
+# this is scoped `test` in pom.xml, so it is absent from the production jar entirely.
+spring:
+  artemis:
+    mode: embedded
+    embedded:
+      enabled: true
+      persistent: false

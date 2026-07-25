@@ -1,0 +1,22 @@
+# Test-only overrides. At runtime the datasource is file-based H2 (data survives restarts,
+# see the main application.yml). Tests must be hermetic — no ./data files written, no state
+# leaking between runs — so here we force an IN-MEMORY H2 on a random-named DB.
+#
+# NOTE: a same-named application.yml on the test classpath SHADOWS the main one entirely
+# (Spring does not merge them), so the schema-init settings from the main file must be
+# repeated here — otherwise Hibernate falls back to create-drop and auto-generates the
+# schema from the entities instead of running schema.sql. Keep these in sync with the main
+# application.yml: schema from schema.sql (ddl-auto none), seed via idempotent data.sql.
+spring:
+  datasource:
+    url: jdbc:h2:mem:customer-test;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+  sql:
+    init:
+      mode: always

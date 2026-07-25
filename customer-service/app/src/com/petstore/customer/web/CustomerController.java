@@ -6,10 +6,12 @@ import com.petstore.customer.domain.Account;
 import com.petstore.customer.domain.CreditCard;
 import com.petstore.customer.domain.Customer;
 import com.petstore.customer.domain.Profile;
+import com.petstore.auth.client.AuthClaims;
 import com.petstore.customer.service.CustomerService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,12 +34,22 @@ import java.util.Map;
 @RestController
 public class CustomerController {
 
+    /** Role authority (Spring's {@code ROLE_} prefix + ADMIN) granting the staff override on reads/updates. */
+    private static final String ROLE_ADMIN = "ROLE_ADMIN";
+    /** Registration response status value. */
+    private static final String STATUS_REGISTERED = "registered";
+
     private final CustomerService customers;
 
     public CustomerController(CustomerService customers) {
         this.customers = customers;
     }
 
+    /**
+     * Register a new customer (public): validate the required field set, provision a USER
+     * credential in auth-service, and store the aggregate keyed by the returned userId.
+     * Returns 201 with {@code {userId, status:"registered"}}; 400 on missing fields, 409 on duplicate.
+     */
     @PostMapping(CustomerServiceEndpoints.REGISTER)
     public ResponseEntity<Map<String, String>> register(@Valid @RequestBody CustomerDtos.RegisterRequest req) {
         requireRegistrationFields(req);
@@ -45,31 +57,61 @@ public class CustomerController {
         CreditCard card = toCard(req.creditCard());
         Customer c = customers.register(req.userName(), req.password(), account, card);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(Map.of("userId", c.getUserId(), "status", "registered"));
+                .body(Map.of(CustomerServiceEndpoints.FIELD_USER_ID, c.getUserId(),
+                        CustomerServiceEndpoints.FIELD_STATUS, STATUS_REGISTERED));
     }
 
+    /** Fetch a customer aggregate (owner or ADMIN only); 404 when no such customer. Card masked on read. */
     @GetMapping(CustomerServiceEndpoints.CUSTOMER)
-    public CustomerDtos.CustomerView get(@PathVariable String id) {
+    public CustomerDtos.CustomerView get(@PathVariable String id, Authentication auth) {
+        requireOwnerOrAdmin(id, auth);
         Customer c = customers.findByUserId(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such customer"));
         return toView(c);
     }
 
+    /** Replace the account/contact slice (owner or ADMIN); profile + card preserved. Returns refreshed view. */
     @PutMapping(CustomerServiceEndpoints.ACCOUNT)
-    public CustomerDtos.CustomerView updateAccount(@PathVariable String id, @RequestBody CustomerDtos.AccountDto dto) {
+    public CustomerDtos.CustomerView updateAccount(@PathVariable String id, @RequestBody CustomerDtos.AccountDto dto,
+                                                   Authentication auth) {
+        requireOwnerOrAdmin(id, auth);
         return toView(customers.updateAccount(id, toAccount(dto)));
     }
 
+    /** Replace the profile-preferences slice (owner or ADMIN); account + card preserved. Returns refreshed view. */
     @PutMapping(CustomerServiceEndpoints.PROFILE)
-    public CustomerDtos.CustomerView updateProfile(@PathVariable String id, @RequestBody CustomerDtos.ProfileDto dto) {
+    public CustomerDtos.CustomerView updateProfile(@PathVariable String id, @RequestBody CustomerDtos.ProfileDto dto,
+                                                   Authentication auth) {
+        requireOwnerOrAdmin(id, auth);
         Profile p = new Profile(dto.preferredLanguage(), dto.favoriteCategory(),
                 dto.myListPreference(), dto.bannerPreference());
         return toView(customers.updateProfile(id, p));
     }
 
+    /** Replace the credit-card slice (owner or ADMIN); account + profile preserved. Card masked in the returned view. */
     @PutMapping(CustomerServiceEndpoints.CARD)
-    public CustomerDtos.CustomerView updateCard(@PathVariable String id, @RequestBody CustomerDtos.CardDto dto) {
+    public CustomerDtos.CustomerView updateCard(@PathVariable String id, @RequestBody CustomerDtos.CardDto dto,
+                                                Authentication auth) {
+        requireOwnerOrAdmin(id, auth);
         return toView(customers.updateCreditCard(id, toCard(dto)));
+    }
+
+    /**
+     * Object-level authorization: the token's stable {@code userId} must equal the path
+     * {@code id}, OR the caller must hold ROLE_ADMIN (staff override). Without this, any
+     * authenticated user could read/overwrite another customer's PII and card by changing
+     * the id in the URL (IDOR). Returns 403 rather than 404 so the two cases are distinct.
+     */
+    private static void requireOwnerOrAdmin(String id, Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+        boolean isAdmin = auth.getAuthorities().stream()
+                .anyMatch(a -> ROLE_ADMIN.equals(a.getAuthority()));
+        String callerUserId = auth.getDetails() instanceof AuthClaims claims ? claims.userId() : null;
+        if (!isAdmin && !id.equals(callerUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not permitted to access this customer");
+        }
     }
 
     /**

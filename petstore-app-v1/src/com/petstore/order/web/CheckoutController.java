@@ -4,9 +4,9 @@ import com.petstore.order.service.EmptyCartException;
 import com.petstore.order.service.OrderService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -19,29 +19,52 @@ import java.util.Map;
 @RestController
 public class CheckoutController {
 
+    /** Fallback email domain for the API path (no customer profile lookup here). */
+    private static final String FALLBACK_EMAIL_DOMAIN = "@petstore.com";
+
+    /** JSON response body keys + the messages returned to the API caller. */
+    private static final String KEY_ORDER_ID = "orderId";
+    private static final String KEY_TOTAL = "total";
+    private static final String KEY_NOTE = "note";
+    private static final String KEY_ERROR = "error";
+    private static final String NOTE_SUBMITTED = "submitted to order-processing-service for fulfilment";
+    private static final String ERROR_CART_EMPTY = "cart_empty";
+
     private final OrderService orderService;
 
     public CheckoutController(OrderService orderService) {
         this.orderService = orderService;
     }
 
+    /**
+     * Place an order via the JSON API. Identity is taken from the verified session token (never
+     * from request params — see the body comment), ship-to and bill-to are validated (legacy H7
+     * required-field set), then {@link OrderService#checkout} publishes the PurchaseOrderEvent and
+     * empties the cart. Returns 200 {@code {orderId, total, note}} on success, or 400
+     * {@code {error:"cart_empty"}} when the cart is empty.
+     */
     @PostMapping("/api/checkout")
-    public ResponseEntity<Map<String, Object>> checkout(
-            @RequestParam(defaultValue = "guest") String userId,
-            @RequestParam(defaultValue = "guest@petstore.com") String email,
+    public ResponseEntity<Map<String, Object>> checkout(Authentication auth,
             @ModelAttribute CheckoutForm form) {
+        // Identity comes from the verified session token, never from request params — otherwise
+        // any authenticated caller could place an order billed to an arbitrary userId/email
+        // (identity spoofing). Mirrors StorefrontController.placeOrder: username is the token
+        // subject, the stable customer userId is on getDetails(). This endpoint is already in
+        // the authenticated() matcher, so auth is non-null here.
+        String userId = auth.getName();
+        String email = userId + FALLBACK_EMAIL_DOMAIN;
         try {
             // Legacy OrderHTMLAction validated both ship-to and bill-to before ordering.
             ContactInfoForm.requireValid(form.getShipTo(), form.getBillTo());
             OrderService.OrderPlaced placed = orderService.checkout(userId, email,
                     form.getShipTo().toContactInfo(), form.getBillTo().toContactInfo());
             return ResponseEntity.ok(Map.of(
-                    "orderId", placed.orderId(),
-                    "total", placed.total(),
-                    "note", "submitted to order-processing-service for fulfilment"));
+                    KEY_ORDER_ID, placed.orderId(),
+                    KEY_TOTAL, placed.total(),
+                    KEY_NOTE, NOTE_SUBMITTED));
         } catch (EmptyCartException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "cart_empty"));
+                    .body(Map.of(KEY_ERROR, ERROR_CART_EMPTY));
         }
     }
 }

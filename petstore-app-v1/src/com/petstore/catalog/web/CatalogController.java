@@ -26,6 +26,30 @@ public class CatalogController {
 
     private static final int PAGE_SIZE = 10;
 
+    /** Thymeleaf view names for the browse screens. */
+    private static final String VIEW_MAIN = "main";
+    private static final String VIEW_CATEGORY = "category";
+    private static final String VIEW_PRODUCT = "product";
+    private static final String VIEW_ITEM = "item";
+    private static final String VIEW_SEARCH = "search";
+
+    /** Request params on the browse routes. */
+    private static final String PARAM_ID = "id";
+    private static final String PARAM_START = "start";
+    private static final String PARAM_KEYWORD = "keyword";
+    private static final String DEFAULT_START = "0";
+
+    /** Model attribute keys consumed by the browse templates. */
+    private static final String ATTR_CATEGORIES = "categories";
+    private static final String ATTR_CATEGORY = "category";
+    private static final String ATTR_PRODUCTS = "products";
+    private static final String ATTR_PRODUCT = "product";
+    private static final String ATTR_ITEMS = "items";
+    private static final String ATTR_ITEM = "item";
+    private static final String ATTR_KEYWORD = "keyword";
+    private static final String ATTR_CART_QTY = "cartQty";
+    private static final String ATTR_ITEM_QTY = "itemQty";
+
     private final CatalogServiceClient catalog;
     private final com.petstore.cart.service.CartService cart;
 
@@ -43,53 +67,53 @@ public class CatalogController {
     public String main(Model model) {
         var categories = catalog.getCategories(0, PAGE_SIZE, currentLocale()).list()
                 .stream().map(CatalogViewMapper::toCategory).toList();
-        model.addAttribute("categories", categories);
-        return "main";
+        model.addAttribute(ATTR_CATEGORIES, categories);
+        return VIEW_MAIN;
     }
 
     @GetMapping("/category")
-    public String category(@RequestParam("id") String categoryId,
-                           @RequestParam(value = "start", defaultValue = "0") int start,
+    public String category(@RequestParam(PARAM_ID) String categoryId,
+                           @RequestParam(value = PARAM_START, defaultValue = DEFAULT_START) int start,
                            Model model) {
         String loc = currentLocale();
-        model.addAttribute("category", catalog.getCategory(categoryId, loc)
+        model.addAttribute(ATTR_CATEGORY, catalog.getCategory(categoryId, loc)
                 .map(CatalogViewMapper::toCategory).orElse(null));
-        model.addAttribute("products", catalog.getProducts(categoryId, start, PAGE_SIZE, loc).list()
+        model.addAttribute(ATTR_PRODUCTS, catalog.getProducts(categoryId, start, PAGE_SIZE, loc).list()
                 .stream().map(CatalogViewMapper::toProduct).toList());
-        return "category";
+        return VIEW_CATEGORY;
     }
 
     @GetMapping("/product")
-    public String product(@RequestParam("id") String productId,
-                          @RequestParam(value = "start", defaultValue = "0") int start,
+    public String product(@RequestParam(PARAM_ID) String productId,
+                          @RequestParam(value = PARAM_START, defaultValue = DEFAULT_START) int start,
                           Model model) {
         String loc = currentLocale();
         List<Item> items = catalog.getItems(productId, start, PAGE_SIZE, loc).list()
                 .stream().map(CatalogViewMapper::toItem).toList();
-        model.addAttribute("product", catalog.getProduct(productId, loc)
+        model.addAttribute(ATTR_PRODUCT, catalog.getProduct(productId, loc)
                 .map(CatalogViewMapper::toProduct).orElse(null));
-        model.addAttribute("items", items);
-        model.addAttribute("cartQty", cartQuantities(items));
-        return "product";
+        model.addAttribute(ATTR_ITEMS, items);
+        model.addAttribute(ATTR_CART_QTY, cartQuantities(items));
+        return VIEW_PRODUCT;
     }
 
     @GetMapping("/item")
-    public String item(@RequestParam("id") String itemId, Model model) {
-        model.addAttribute("item", catalog.getItem(itemId, currentLocale())
+    public String item(@RequestParam(PARAM_ID) String itemId, Model model) {
+        model.addAttribute(ATTR_ITEM, catalog.getItem(itemId, currentLocale())
                 .map(CatalogViewMapper::toItem).orElse(null));
-        model.addAttribute("itemQty", cart.quantityOf(itemId));
-        return "item";
+        model.addAttribute(ATTR_ITEM_QTY, cart.quantityOf(itemId));
+        return VIEW_ITEM;
     }
 
     @GetMapping("/search")
-    public String search(@RequestParam(value = "keyword", defaultValue = "") String keyword,
+    public String search(@RequestParam(value = PARAM_KEYWORD, defaultValue = "") String keyword,
                          Model model) {
         List<Item> items = catalog.searchItems(keyword, 0, PAGE_SIZE, currentLocale()).list()
                 .stream().map(CatalogViewMapper::toItem).toList();
-        model.addAttribute("keyword", keyword);
-        model.addAttribute("items", items);
-        model.addAttribute("cartQty", cartQuantities(items));
-        return "search";
+        model.addAttribute(ATTR_KEYWORD, keyword);
+        model.addAttribute(ATTR_ITEMS, items);
+        model.addAttribute(ATTR_CART_QTY, cartQuantities(items));
+        return VIEW_SEARCH;
     }
 
     /** Current cart quantity per item id, to seed the in-page stepper. */

@@ -1,13 +1,12 @@
 package com.petstore.messaging;
 
-import com.petstore.messaging.events.InvoiceEvent;
-import com.petstore.messaging.events.OrderApprovedEvent;
-import com.petstore.messaging.events.OrderStatusEvent;
-import com.petstore.messaging.events.PurchaseOrderEvent;
 import jakarta.jms.ConnectionFactory;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.jms.support.converter.MessageConverter;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Thin publisher used by every service: {@code publisher.publish(dest, event)}.
@@ -20,6 +19,15 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class MessagePublisher {
+
+    /**
+     * event class → {@code _type} id, derived once from {@link MessagingConfig#TYPE_IDS}
+     * (the single source of truth) by inverting it. Keeping this in lock-step with the
+     * converter's own map means adding an event type is a one-line change to {@code TYPE_IDS}
+     * — no parallel {@code instanceof} chain here to forget to update.
+     */
+    private static final Map<Class<?>, String> TYPE_BY_CLASS = MessagingConfig.TYPE_IDS.entrySet().stream()
+            .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
 
     private final JmsTemplate queueTemplate;
     private final JmsTemplate topicTemplate;
@@ -42,17 +50,13 @@ public class MessagePublisher {
         String type = typeOf(event);
         t.convertAndSend(dest.name(), event, m -> {
             if (type != null) {
-                m.setStringProperty("_type", type);
+                m.setStringProperty(MessagingConfig.TYPE_ID_PROPERTY, type);
             }
             return m;
         });
     }
 
     private static String typeOf(Object event) {
-        if (event instanceof PurchaseOrderEvent) return PurchaseOrderEvent.TYPE;
-        if (event instanceof OrderApprovedEvent) return OrderApprovedEvent.TYPE;
-        if (event instanceof InvoiceEvent) return InvoiceEvent.TYPE;
-        if (event instanceof OrderStatusEvent) return OrderStatusEvent.TYPE;
-        return null;
+        return event == null ? null : TYPE_BY_CLASS.get(event.getClass());
     }
 }

@@ -9,6 +9,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
+import java.util.Arrays;
+
 /**
  * Spring Security configuration for the monolith storefront.
  *
@@ -24,6 +26,28 @@ import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
  */
 @Configuration
 public class SecurityConfig {
+
+    /** Public browse surface (catalog/cart/register/login/css) — no authentication required. */
+    private static final String[] PUBLIC_MATCHERS = {
+            "/", "/category", "/product", "/item", "/search",
+            "/cart", "/cart/**", "/register-form", "/login",
+            "/orders/**", "/css/**"};
+    /** ADMIN-only surface (kept for parity with the legacy admin links). */
+    private static final String ADMIN_MATCHERS = "/admin/**";
+    /** Requires a signed-in customer — both checkout endpoints create orders. */
+    private static final String[] AUTHENTICATED_MATCHERS = {
+            "/checkout", "/api/checkout", "/pre-checkout", "/customer"};
+    /** Form/AJAX POST paths exempted from CSRF (token-less programmatic posts). */
+    private static final String[] CSRF_EXEMPT_MATCHERS = {
+            "/checkout", "/api/checkout", "/pre-checkout", "/cart/**", "/admin/**"};
+    /** Role (without Spring's {@code ROLE_} prefix) required for the admin surface. */
+    private static final String ROLE_ADMIN = "ADMIN";
+
+    /** Form-login / logout endpoints and the servlet session cookie cleared on logout. */
+    private static final String LOGIN_PAGE = "/login";
+    private static final String LOGOUT_URL = "/logout";
+    private static final String LOGOUT_SUCCESS_URL = "/?loggedout";
+    private static final String SESSION_COOKIE = "JSESSIONID";
 
     /** AuthenticationManager backed solely by the customer-service provider. */
     @Bean
@@ -45,27 +69,24 @@ public class SecurityConfig {
         http
             .authenticationManager(authManager)
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/category", "/product", "/item", "/search",
-                        "/cart", "/cart/**", "/register-form", "/login",
-                        "/orders/**", "/css/**").permitAll()
-                .requestMatchers("/admin/**").hasRole("ADMIN")
-                .requestMatchers("/checkout", "/api/checkout", "/customer").authenticated()
+                .requestMatchers(PUBLIC_MATCHERS).permitAll()
+                .requestMatchers(ADMIN_MATCHERS).hasRole(ROLE_ADMIN)
+                .requestMatchers(AUTHENTICATED_MATCHERS).authenticated()
                 .anyRequest().permitAll())
             .formLogin(form -> form
-                .loginPage("/login").permitAll()
+                .loginPage(LOGIN_PAGE).permitAll()
                 // applies the customer's stored preferredLanguage on sign-on (legacy SignOnNotifier),
                 // then redirects home — replaces the old defaultSuccessUrl("/", true).
                 .successHandler(successHandler))
             .logout(logout -> logout
-                .logoutUrl("/logout")
-                .logoutSuccessUrl("/?loggedout")
+                .logoutUrl(LOGOUT_URL)
+                .logoutSuccessUrl(LOGOUT_SUCCESS_URL)
                 .invalidateHttpSession(true)
-                .deleteCookies("JSESSIONID"))
+                .deleteCookies(SESSION_COOKIE))
             .csrf(csrf -> csrf.ignoringRequestMatchers(
-                    new AntPathRequestMatcher("/checkout"),
-                    new AntPathRequestMatcher("/api/checkout"),
-                    new AntPathRequestMatcher("/cart/**"),
-                    new AntPathRequestMatcher("/admin/**")))
+                    Arrays.stream(CSRF_EXEMPT_MATCHERS)
+                            .map(AntPathRequestMatcher::new)
+                            .toArray(AntPathRequestMatcher[]::new)))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED));
         return http.build();
     }

@@ -9,6 +9,7 @@ import com.petstore.opc.domain.WarehouseOrder;
 import com.petstore.opc.service.FulfilmentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jms.annotation.JmsListener;
 import org.springframework.stereotype.Component;
 
@@ -32,7 +33,7 @@ public class OrderListener {
         this.fulfilment = fulfilment;
     }
 
-    @JmsListener(destination = "PurchaseOrderQueue", containerFactory = "queueFactory")
+    @JmsListener(destination = Destinations.PURCHASE_ORDER_NAME, containerFactory = "queueFactory")
     public void onOrder(PurchaseOrderEvent msg) {
         log.info("Received order {} from {} ({} lines)", msg.orderId(),
                 Destinations.PURCHASE_ORDER.name(), msg.lines() == null ? 0 : msg.lines().size());
@@ -40,10 +41,18 @@ public class OrderListener {
                 .stream()
                 .map(l -> new OrderLine(l.itemId(), l.productId(), l.categoryId(), l.quantity(), l.unitPrice()))
                 .toList();
-        fulfilment.receiveOrder(new WarehouseOrder(
-                msg.orderId(), msg.userId(), msg.emailId(), msg.locale(),
-                msg.totalPrice(), OrderStatus.PENDING, lines,
-                toDomain(msg.shipTo()), toDomain(msg.billTo()), occurredAt(msg)));
+        try {
+            fulfilment.receiveOrder(new WarehouseOrder(
+                    msg.orderId(), msg.userId(), msg.emailId(), msg.locale(),
+                    msg.totalPrice(), OrderStatus.PENDING, lines,
+                    toDomain(msg.shipTo()), toDomain(msg.billTo()), occurredAt(msg)));
+        } catch (DataIntegrityViolationException dup) {
+            // Idempotency backstop (Option 3): the order_id primary key rejected a duplicate
+            // that raced past the findById guard (two redeliveries interleaving, or a client
+            // replay the storefront token-set didn't catch). Swallow + ack — the order is
+            // already stored, so this delivery is a no-op, not a poison message to redeliver.
+            log.info("Order {} already persisted (primary-key dedup); ignoring duplicate delivery", msg.orderId());
+        }
     }
 
     /** Order-received timestamp from the envelope (legacy PurchaseOrder poDate); now if absent/unparseable. */

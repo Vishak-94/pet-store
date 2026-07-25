@@ -37,6 +37,12 @@ public class AdminService {
         return orders.orderIdsByStatus(status);
     }
 
+    /** Every order, most-recently-received first, for the admin all-orders overview. */
+    @Transactional(readOnly = true)
+    public List<WarehouseOrder> allOrders() {
+        return orders.findAllByCreatedDesc();
+    }
+
     /** Approve a pending order (PENDING → APPROVED), then dispatch for fulfilment. */
     @Transactional
     public void approve(String orderId) {

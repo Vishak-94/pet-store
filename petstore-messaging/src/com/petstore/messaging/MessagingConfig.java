@@ -34,6 +34,14 @@ import java.util.Map;
 @EnableJms
 public class MessagingConfig {
 
+    /**
+     * The JMS message property that carries the logical event type id. Both the converter
+     * (which reads it to pick a target class on inbound) and {@link MessagePublisher} (which
+     * stamps it on outbound) must agree on this name, so it lives here as the single constant
+     * rather than a literal repeated in two places.
+     */
+    public static final String TYPE_ID_PROPERTY = "_type";
+
     /** Logical type id → event class. The single source of truth for routing. */
     public static final Map<String, Class<?>> TYPE_IDS = Map.of(
             PurchaseOrderEvent.TYPE, PurchaseOrderEvent.class,
@@ -45,7 +53,7 @@ public class MessagingConfig {
     public MessageConverter jacksonJmsMessageConverter() {
         MappingJackson2MessageConverter c = new MappingJackson2MessageConverter();
         c.setTargetType(MessageType.TEXT);
-        c.setTypeIdPropertyName("_type");
+        c.setTypeIdPropertyName(TYPE_ID_PROPERTY);
         c.setTypeIdMappings(TYPE_IDS);
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         c.setObjectMapper(mapper);
@@ -71,6 +79,20 @@ public class MessagingConfig {
         f.setConnectionFactory(cf);
         f.setMessageConverter(converter);
         f.setPubSubDomain(true);
+        // Phase 4c: make topic subscriptions DURABLE + SHARED (JMS 2.0).
+        //  - Durable: the broker retains topic messages for a named subscription even while
+        //    that subscriber is offline (e.g. a service restart/deploy), then delivers them on
+        //    reconnect — so an InvoiceTopic/OrderStatusTopic event is never lost just because a
+        //    consumer happened to be down. (Backed by the broker's persistent volume, Phase 4b.)
+        //  - Shared: a durable subscription is normally keyed by connection clientId, which must
+        //    be UNIQUE per broker connection. This factory is a single shared bean and some
+        //    services (notification-service) attach TWO topic @JmsListeners to it — each opens its
+        //    own connection, so a single clientId would collide. Shared durable subscriptions
+        //    (JMS 2.0) drop the clientId requirement entirely: the subscription is identified by
+        //    its NAME alone. Each @JmsListener therefore just supplies a globally-unique
+        //    `subscription` name (see the three topic listeners); no clientId to manage.
+        f.setSubscriptionDurable(true);
+        f.setSubscriptionShared(true);
         return f;
     }
 }

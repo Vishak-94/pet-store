@@ -21,6 +21,16 @@ import java.io.IOException;
  */
 public class AuthJwtFilter extends OncePerRequestFilter {
 
+    /** Standard bearer-token header and its scheme prefix (RFC 6750). */
+    private static final String AUTH_HEADER = "Authorization";
+    private static final String BEARER_PREFIX = "Bearer ";
+
+    /** Cookie name browser UIs use to carry the token (so HTML clients need no header). */
+    public static final String JWT_COOKIE = "jwt";
+
+    /** Authority prefix Spring Security expects for role-based checks ({@code ROLE_ADMIN} etc.). */
+    private static final String ROLE_PREFIX = "ROLE_";
+
     private final JwtVerifier verifier;
 
     public AuthJwtFilter(JwtVerifier verifier) {
@@ -35,7 +45,7 @@ public class AuthJwtFilter extends OncePerRequestFilter {
             try {
                 AuthClaims claims = verifier.verify(token);
                 var authorities = claims.roles().stream()
-                        .map(r -> new SimpleGrantedAuthority("ROLE_" + r)).toList();
+                        .map(r -> new SimpleGrantedAuthority(ROLE_PREFIX + r)).toList();
                 var auth = new UsernamePasswordAuthenticationToken(claims.username(), token, authorities);
                 auth.setDetails(claims);   // downstream can read userId/roles if needed
                 SecurityContextHolder.getContext().setAuthentication(auth);
@@ -47,13 +57,13 @@ public class AuthJwtFilter extends OncePerRequestFilter {
     }
 
     private static String extractToken(HttpServletRequest req) {
-        String h = req.getHeader("Authorization");
-        if (h != null && h.startsWith("Bearer ")) {
-            return h.substring(7);
+        String h = req.getHeader(AUTH_HEADER);
+        if (h != null && h.startsWith(BEARER_PREFIX)) {
+            return h.substring(BEARER_PREFIX.length());
         }
         if (req.getCookies() != null) {
             for (var c : req.getCookies()) {
-                if ("jwt".equals(c.getName())) {
+                if (JWT_COOKIE.equals(c.getName())) {
                     return c.getValue();
                 }
             }

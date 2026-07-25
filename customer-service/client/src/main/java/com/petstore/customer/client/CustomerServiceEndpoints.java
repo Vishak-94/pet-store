@@ -21,4 +21,16 @@ public final class CustomerServiceEndpoints {
     public static final String ACCOUNT  = "/customer/{id}/account";
     public static final String PROFILE  = "/customer/{id}/profile";
     public static final String CARD     = "/customer/{id}/card";
+
+    /**
+     * JSON field names on the login/registration wire contract. Shared between the client
+     * (which writes/reads them) and the server controller — kept as constants (contract
+     * literals) so the two ends can't disagree on a key name.
+     */
+    public static final String FIELD_USER_NAME = "userName";
+    public static final String FIELD_PASSWORD = "password";
+    public static final String FIELD_TOKEN = "token";
+    public static final String FIELD_CUSTOMER_ID = "customerId";
+    public static final String FIELD_USER_ID = "userId";
+    public static final String FIELD_STATUS = "status";
 }

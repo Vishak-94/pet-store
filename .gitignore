@@ -26,6 +26,11 @@ Thumbs.db
 /tmp/
 logs/
 
+# ---- Runtime databases (file-based H2 for the OPC order store; created on first run) ----
+data/
+*.mv.db
+*.trace.db
+
 # ---- PowerPoint lock files ----
 ~$*.pptx
 

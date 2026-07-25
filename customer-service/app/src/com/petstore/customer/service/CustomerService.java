@@ -24,6 +24,9 @@ import java.util.Optional;
 @Service
 public class CustomerService {
 
+    /** Role provisioned for every self-registered customer (staff roles are provisioned elsewhere). */
+    private static final String CUSTOMER_ROLE = "USER";
+
     private final AuthClient auth;
     private final CustomerRepository customers;
 
@@ -42,7 +45,7 @@ public class CustomerService {
     public Customer register(String userName, String password, Account account, CreditCard creditCard) {
         String userId;
         try {
-            userId = auth.provision(userName, password, "USER");
+            userId = auth.provision(userName, password, CUSTOMER_ROLE);
         } catch (HttpClientErrorException.Conflict e) {
             throw new DuplicateAccountException(userName);
         }

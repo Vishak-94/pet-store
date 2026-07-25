@@ -15,6 +15,9 @@ public final class OrderProcessingEndpoints {
     /** GET — order ids by status: /api/orders?status=PENDING */
     public static final String ORDERS = "/api/orders";
 
+    /** GET — all orders as summaries, newest-received first: /api/orders/all */
+    public static final String ORDERS_ALL = "/api/orders/all";
+
     /** GET — full order detail: /api/orders/{id} */
     public static final String ORDER_BY_ID = "/api/orders/{id}";
 
@@ -32,4 +35,17 @@ public final class OrderProcessingEndpoints {
 
     /** GET — sales aggregation over a date range (legacy getChartInfo): /api/sales?start=&end=&category= */
     public static final String SALES = "/api/sales";
+
+    /**
+     * Query-parameter names on the wire. Shared by the client (which sets them) and the
+     * controller (which reads them via {@code @RequestParam}). Contract literals — kept as
+     * constants, never externalized to config.
+     */
+    public static final String PARAM_STATUS = "status";
+    public static final String PARAM_START = "start";
+    public static final String PARAM_END = "end";
+    public static final String PARAM_CATEGORY = "category";
+
+    /** Path variable name used in the {@code {id}} templated paths above. */
+    public static final String PATH_VAR_ID = "id";
 }

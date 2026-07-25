@@ -28,13 +28,20 @@ public class SignOnLocaleSuccessHandler extends SimpleUrlAuthenticationSuccessHa
 
     private static final Logger log = LoggerFactory.getLogger(SignOnLocaleSuccessHandler.class);
 
+    /** Default landing page after sign-on (matches the old defaultSuccessUrl("/", true)). */
+    private static final String DEFAULT_TARGET_URL = "/";
+    /** Customer-profile map key holding the stored locale (e.g. "en_US"). */
+    private static final String PROFILE_PREFERRED_LANGUAGE = "preferredLanguage";
+    /** Separator legacy used in language_country locale strings. */
+    private static final String LOCALE_SEPARATOR = "_";
+
     private final CustomerServiceClient customerClient;
     private final LocaleResolver localeResolver;
 
     public SignOnLocaleSuccessHandler(CustomerServiceClient customerClient, LocaleResolver localeResolver) {
         this.customerClient = customerClient;
         this.localeResolver = localeResolver;
-        setDefaultTargetUrl("/");
+        setDefaultTargetUrl(DEFAULT_TARGET_URL);
         setAlwaysUseDefaultTargetUrl(true);   // matches the old defaultSuccessUrl("/", true)
     }
 
@@ -48,14 +55,14 @@ public class SignOnLocaleSuccessHandler extends SimpleUrlAuthenticationSuccessHa
     /** Sets the session locale from the customer's preferredLanguage (unless ?lang= overrode it). */
     private void applyPreferredLanguage(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) {
-        if (request.getParameter("lang") != null) {
+        if (request.getParameter(com.petstore.config.WebConfig.LOCALE_PARAM) != null) {
             return;   // explicit override on the login request wins
         }
         Object token = authentication.getCredentials();   // the JWT set by CustomerServiceAuthProvider
         if (token == null) {
             return;
         }
-        String userId = authentication.getDetails() instanceof String uid ? uid : authentication.getName();
+        String userId = AuthenticatedUser.userId(authentication);
         try {
             Locale locale = customerClient.getCustomer(userId, token.toString())
                     .map(SignOnLocaleSuccessHandler::preferredLocale)
@@ -73,12 +80,12 @@ public class SignOnLocaleSuccessHandler extends SimpleUrlAuthenticationSuccessHa
         if (view.profile() == null) {
             return null;
         }
-        Object lang = view.profile().get("preferredLanguage");
+        Object lang = view.profile().get(PROFILE_PREFERRED_LANGUAGE);
         if (lang == null || lang.toString().isBlank()) {
             return null;
         }
         // Legacy getLocaleFromString split on '_' (language_country); Pet Store locales are 2-part.
-        String[] parts = lang.toString().split("_");
+        String[] parts = lang.toString().split(LOCALE_SEPARATOR);
         return parts.length >= 2 ? new Locale(parts[0], parts[1]) : new Locale(parts[0]);
     }
 }

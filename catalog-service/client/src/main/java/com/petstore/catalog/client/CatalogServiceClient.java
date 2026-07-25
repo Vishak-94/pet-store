@@ -6,9 +6,12 @@ import com.petstore.catalog.client.CatalogDtos.ItemDto;
 import com.petstore.catalog.client.CatalogDtos.ItemPage;
 import com.petstore.catalog.client.CatalogDtos.ProductDto;
 import com.petstore.catalog.client.CatalogDtos.ProductPage;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,6 +35,10 @@ import java.util.Optional;
  */
 public class CatalogServiceClient {
 
+    /** Bounded timeouts so a hung/slow catalog-service can't block caller threads indefinitely. */
+    static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
+    static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
+
     private final RestClient http;
 
     /** Use the default base URL ({@code http://localhost:8083}). */
@@ -41,12 +48,25 @@ public class CatalogServiceClient {
 
     /** Use a specific base URL (host/port per environment). */
     public CatalogServiceClient(String baseUrl) {
-        this.http = RestClient.builder().baseUrl(baseUrl).build();
+        this.http = RestClient.builder().baseUrl(baseUrl).requestFactory(timeoutFactory()).build();
     }
 
-    /** Advanced: supply a preconfigured RestClient (e.g. with interceptors/TLS). */
+    /** Advanced: supply a preconfigured RestClient (e.g. with interceptors/TLS/timeouts). */
     public CatalogServiceClient(RestClient restClient) {
         this.http = restClient;
+    }
+
+    /**
+     * A request factory with bounded connect/read timeouts. Catalog is on the critical
+     * browse/cart path (every page resolves item prices), so without these one unresponsive
+     * catalog-service would hang the whole storefront. Callers needing different values can
+     * pass their own preconfigured {@link RestClient} via the other constructor.
+     */
+    private static ClientHttpRequestFactory timeoutFactory() {
+        SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
+        f.setConnectTimeout((int) CONNECT_TIMEOUT.toMillis());
+        f.setReadTimeout((int) READ_TIMEOUT.toMillis());
+        return f;
     }
 
     // ---- categories ----
@@ -55,7 +75,7 @@ public class CatalogServiceClient {
         try {
             return Optional.ofNullable(http.get()
                     .uri(uri -> uri.path(CatalogServiceEndpoints.CATEGORY_BY_ID)
-                            .queryParam("lang", locale).build(categoryId))
+                            .queryParam(CatalogServiceEndpoints.PARAM_LANG, locale).build(categoryId))
                     .retrieve().body(CategoryDto.class));
         } catch (HttpClientErrorException.NotFound e) {
             return Optional.empty();
@@ -65,8 +85,9 @@ public class CatalogServiceClient {
     public CategoryPage getCategories(int start, int count, String locale) {
         CategoryPage page = http.get()
                 .uri(uri -> uri.path(CatalogServiceEndpoints.CATEGORIES)
-                        .queryParam("start", start).queryParam("count", count)
-                        .queryParam("lang", locale).build())
+                        .queryParam(CatalogServiceEndpoints.PARAM_START, start)
+                        .queryParam(CatalogServiceEndpoints.PARAM_COUNT, count)
+                        .queryParam(CatalogServiceEndpoints.PARAM_LANG, locale).build())
                 .retrieve().body(CategoryPage.class);
         return page == null ? emptyCategoryPage(start) : page;
     }
@@ -77,7 +98,7 @@ public class CatalogServiceClient {
         try {
             return Optional.ofNullable(http.get()
                     .uri(uri -> uri.path(CatalogServiceEndpoints.PRODUCT_BY_ID)
-                            .queryParam("lang", locale).build(productId))
+                            .queryParam(CatalogServiceEndpoints.PARAM_LANG, locale).build(productId))
                     .retrieve().body(ProductDto.class));
         } catch (HttpClientErrorException.NotFound e) {
             return Optional.empty();
@@ -87,8 +108,9 @@ public class CatalogServiceClient {
     public ProductPage getProducts(String categoryId, int start, int count, String locale) {
         ProductPage page = http.get()
                 .uri(uri -> uri.path(CatalogServiceEndpoints.PRODUCTS_IN_CATEGORY)
-                        .queryParam("start", start).queryParam("count", count)
-                        .queryParam("lang", locale).build(categoryId))
+                        .queryParam(CatalogServiceEndpoints.PARAM_START, start)
+                        .queryParam(CatalogServiceEndpoints.PARAM_COUNT, count)
+                        .queryParam(CatalogServiceEndpoints.PARAM_LANG, locale).build(categoryId))
                 .retrieve().body(ProductPage.class);
         return page == null ? emptyProductPage(start) : page;
     }
@@ -99,7 +121,7 @@ public class CatalogServiceClient {
         try {
             return Optional.ofNullable(http.get()
                     .uri(uri -> uri.path(CatalogServiceEndpoints.ITEM_BY_ID)
-                            .queryParam("lang", locale).build(itemId))
+                            .queryParam(CatalogServiceEndpoints.PARAM_LANG, locale).build(itemId))
                     .retrieve().body(ItemDto.class));
         } catch (HttpClientErrorException.NotFound e) {
             return Optional.empty();
@@ -109,8 +131,9 @@ public class CatalogServiceClient {
     public ItemPage getItems(String productId, int start, int size, String locale) {
         ItemPage page = http.get()
                 .uri(uri -> uri.path(CatalogServiceEndpoints.ITEMS_IN_PRODUCT)
-                        .queryParam("start", start).queryParam("count", size)
-                        .queryParam("lang", locale).build(productId))
+                        .queryParam(CatalogServiceEndpoints.PARAM_START, start)
+                        .queryParam(CatalogServiceEndpoints.PARAM_COUNT, size)
+                        .queryParam(CatalogServiceEndpoints.PARAM_LANG, locale).build(productId))
                 .retrieve().body(ItemPage.class);
         return page == null ? emptyItemPage(start) : page;
     }
@@ -118,9 +141,10 @@ public class CatalogServiceClient {
     public ItemPage searchItems(String keyword, int start, int size, String locale) {
         ItemPage page = http.get()
                 .uri(uri -> uri.path(CatalogServiceEndpoints.ITEMS_SEARCH)
-                        .queryParam("keyword", keyword == null ? "" : keyword)
-                        .queryParam("start", start).queryParam("count", size)
-                        .queryParam("lang", locale).build())
+                        .queryParam(CatalogServiceEndpoints.PARAM_KEYWORD, keyword == null ? "" : keyword)
+                        .queryParam(CatalogServiceEndpoints.PARAM_START, start)
+                        .queryParam(CatalogServiceEndpoints.PARAM_COUNT, size)
+                        .queryParam(CatalogServiceEndpoints.PARAM_LANG, locale).build())
                 .retrieve().body(ItemPage.class);
         return page == null ? emptyItemPage(start) : page;
     }

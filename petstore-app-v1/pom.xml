@@ -39,6 +39,14 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- Health / readiness probes + metrics — the storefront also hosts the shared
+             broker, so an operational health endpoint matters here as much as anywhere.
+             Matches the actuator setup the other 7 services already carry. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- NOTE: no JPA/H2 — the storefront persists nothing now. Like the legacy
              storefront, it builds the order and PUBLISHES it; order-processing-service
              (the OPC) is the authoritative order store. -->
@@ -89,15 +97,27 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- JMS + embedded ActiveMQ Artemis (KEEP JMS; replaces the JMS/MDB backbone).
-             The storefront hosts the shared broker; checkout publishes here. -->
+        <!-- JMS via ActiveMQ Artemis (KEEP JMS; replaces the JMS/MDB backbone). At runtime
+             the storefront is a plain CLIENT of the externalized broker container
+             (mode: native, broker-url); checkout publishes there. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-artemis</artifactId>
         </dependency>
+        <!-- Artemis broker SERVER — TEST-ONLY (scope: test). In live, the broker is the
+             standalone container (docker-compose.yml) and this app is a plain client
+             (mode: native, embedded.enabled=false), so no in-VM broker is ever started
+             in production. This dependency exists solely so @SpringBootTest can boot an
+             in-VM embedded broker (test/resources/application.yml) and `mvn test` needs no
+             running container. `scope: test` keeps it out of the shipped jar and makes the
+             test-only nature build-enforced, not just documented.
+             (History: the storefront used to HOST the shared broker via an embedded server
+             + a TCP acceptor on :61616. That was removed when the broker was externalized —
+             see git history for the deleted EmbeddedBrokerConfig.) -->
         <dependency>
             <groupId>org.apache.activemq</groupId>
             <artifactId>artemis-jakarta-server</artifactId>
+            <scope>test</scope>
         </dependency>
 
         <!-- Shared messaging: destinations, event envelope, converter, publisher. -->
@@ -105,6 +125,21 @@
             <groupId>com.petstore</groupId>
             <artifactId>petstore-messaging</artifactId>
             <version>1.0.0</version>
+        </dependency>
+
+        <!-- Resilience: circuit breaker + bounded retry around the SDK calls
+             (wired in HttpClientConfig via ResilientRestClient). Core modules only
+             (no Spring Boot starter) — the resilience lives at the RestClient
+             interceptor level, not via AOP annotations. -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-retry</artifactId>
+            <version>2.2.0</version>
         </dependency>
 
         <!-- Testing -->
@@ -125,6 +160,14 @@
                 <directory>${project.basedir}/resources</directory>
             </resource>
         </resources>
+        <!-- Test-only overrides (e.g. keep the Artemis broker embedded so @SpringBootTest
+             needs no running broker container). Listed after main resources so the test
+             application.yml wins on the classpath during the test phase. -->
+        <testResources>
+            <testResource>
+                <directory>${project.basedir}/test/resources</directory>
+            </testResource>
+        </testResources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

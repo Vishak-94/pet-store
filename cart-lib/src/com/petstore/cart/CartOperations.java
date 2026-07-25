@@ -31,6 +31,12 @@ import java.util.Map;
  */
 public class CartOperations {
 
+    /**
+     * Locale used to resolve item name/price from catalog-service. Fixed to the legacy
+     * default ({@code en_US}) because the cart stores only item ids + quantities and the
+     * legacy cart resolved prices in the base locale; it is a domain constant, not a
+     * per-environment setting, so it is not externalized to config.
+     */
     private static final String LOCALE = "en_US";
 
     private final CartStore store;
@@ -65,6 +71,18 @@ public class CartOperations {
 
     public void empty(String cartId) {
         store.remove(cartId);
+    }
+
+    /**
+     * Number of DISTINCT line items — identical to {@code view(cartId).count()} but
+     * WITHOUT resolving each line against catalog-service. {@code count} is defined as
+     * the raw distinct-line count ({@code quantities.size()}), so it needs no catalog
+     * data; reading it from the store avoids one remote catalog call per cart line.
+     * This is what the nav-bar badge (rendered on every page) uses, so the badge no
+     * longer depends on catalog-service being reachable.
+     */
+    public int count(String cartId) {
+        return store.snapshot(cartId).size();
     }
 
     /**

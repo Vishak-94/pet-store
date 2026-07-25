@@ -260,7 +260,7 @@ record never carries JPA annotations (hexagonal seam).
 prefixes via `@AttributeOverrides`. Its base column names (`family_name`, `given_name`, `street1`,
 `street2`, `city`, `state`, `zip`, `country`, `telephone`, `email`) are overridden to `ship_*` / `bill_*`.
 
-`wh_order` columns (from `schema.sql`, `ddl-auto: none` — schema is authoritative):
+`wh_order` columns (from Flyway `db/migration/V1__init_order_schema.sql`, `ddl-auto: none` — schema is authoritative):
 
 | Column | Maps to | Notes |
 |--------|---------|-------|

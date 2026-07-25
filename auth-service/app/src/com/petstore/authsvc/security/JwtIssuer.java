@@ -1,5 +1,6 @@
 package com.petstore.authsvc.security;
 
+import com.petstore.auth.client.AuthClaims;
 import io.jsonwebtoken.Jwts;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -36,8 +37,8 @@ public class JwtIssuer {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(username)
-                .claim("uid", userId)
-                .claim("roles", roles)
+                .claim(AuthClaims.CLAIM_USER_ID, userId)
+                .claim(AuthClaims.CLAIM_ROLES, roles)
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + ttlMillis))
                 .signWith(privateKey)     // RS256 (inferred from RSA private key)

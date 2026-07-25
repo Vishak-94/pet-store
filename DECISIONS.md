@@ -18,7 +18,7 @@ and why. Status: **DECIDED** (locked by user) · **RECOMMENDED** (my proposal, a
 | 11 | Checkout consistency | Keep optimistic (no stock check) · Add real-time reservation | **Keep optimistic** | RECOMMENDED | Preserve behavior + storefront/inventory decoupling |
 | 12 | Legacy code handling | Edit in place · New project, legacy read-only | **New `petstore-spring/` project; legacy read-only** | DECIDED | It's a re-platform, not in-place edits |
 | 13 | Phase-1 slice | Catalog first · All 4 apps up front · skeleton only | **Catalog slice first** | RECOMMENDED | Prove runtime end-to-end before fanning out |
-| 14 | JMS broker (local) | Embedded Artemis · External ActiveMQ (Docker) | **Embedded Artemis** | RECOMMENDED | Real JMS, no separate install; Docker not present |
+| 14 | JMS broker (local) | Embedded Artemis · External ActiveMQ (Docker) | **External Artemis container** (was Embedded; superseded Phase 4a) | DECIDED | Externalized so broker lifecycle is independent of the storefront; Colima runtime (Docker Desktop avoided for licensing) |
 | 15 | Order workflow pattern | State pattern · status enum + guards | **Status enum + guarded transitions (Option A)** | DECIDED | User chose A after pros/cons review; right-sized for 5 stable states, closest to legacy string-status model |
 | 16 | Web action dispatch | Fold EJBActions into services · explicit Command pattern | **Thin controllers → services directly** | DECIDED | User chose; idiomatic Spring MVC (the framework is the dispatcher), no command indirection |
 
@@ -317,3 +317,56 @@ Built the legacy Order Processing Center (opc.ear) as its own service, moved all
 - **admin-office-service now a thin console (legacy admin.ear):** owns NO order data. Its UI + /api/orders delegate to order-processing-service via OrderProcessingClient, forwarding the admin's JWT (cookie for UI, Bearer for API). Dropped JPA/H2/JMS/petstore-messaging deps + schema/data; kept login + orders UI + auth-client. Retained package com.petstore.warehouse (self-contained; rename is cosmetic).
 - **Verified live (8 services + broker, via ./run-all.sh):** auto-approve small order → storefront publishes (snowflake id 3560871686…) → OPC persists+approves → inventory fulfils → invoice → OPC COMPLETED → customer emailed; admin-office /api/orders returns the SAME via OPC delegation. Manual path: large order (580.5) → PENDING → admin approves THROUGH admin-office console → OPC → fulfil → COMPLETED. Behaviour matches prior runs.
 - **Topology now (8 services + broker):** petstore-app-v1 :8080 (storefront, publish-only, hosts broker, embeds cart-lib) · customer-service :8081 · admin-office-service :8082 (ADMIN console, delegates to OPC) · catalog-service :8083 · inventory-service :8085 · auth-service :8086 · notification-service :8087 · order-processing-service :8088 (OPC, owns orders) · Artemis :61616. run-all.sh/stop-all.sh updated for :8088.
+
+## Broker durability: persistence + durable topic subs + DLQ (Phase 4b/4c/4d) — **DECIDED**
+Phase 4a externalized the shared Artemis broker into its own container (`docker-compose.yml`, :61616),
+keeping the old embedded broker's *semantics* (ephemeral, non-durable). Phase 4b/4c/4d then made the
+broker durable so a restart/crash/deploy no longer drops in-flight or fanned-out messages.
+- **4b Persistence (user chose "named Docker volume"):** the Artemis journal/bindings/paging dir is
+  backed by a named volume `petstore-broker-data`, and `--no-fsync` (which the ephemeral broker used
+  for speed) is dropped so writes are actually flushed. Messages survive `docker compose restart`/`down`
+  (kept unless `down -v`). A one-shot `broker-init` sidecar `chown`s the fresh volume to the `artemis`
+  uid 1001 first — Docker creates named volumes root-owned and the unprivileged broker can't create its
+  server-lock in a root dir otherwise (fails with `IOException` on `server.lock`).
+- **4c Durable topic subscriptions:** the three topic subscribers (OPC `InvoiceListener`,
+  notification `InvoiceNotificationListener` + `OrderStatusNotificationListener`) are now DURABLE so a
+  topic event sent while a service is restarting is retained and delivered on reconnect. Implemented as
+  **JMS 2.0 shared-durable** subscriptions (`setSubscriptionDurable(true)` + `setSubscriptionShared(true)`
+  on the shared `topicFactory`), NOT classic clientId-keyed durable subs. Rationale: `topicFactory` is a
+  single fleet-wide bean and notification-service attaches TWO topic listeners to it — each opens its own
+  connection, so one shared `clientId` would collide. Shared durable subs key on the **subscription name**
+  alone (no clientId), so each `@JmsListener` just carries a globally-unique `subscription` (`opc-invoice`,
+  `notification-invoice`, `notification-order-status`). The two InvoiceTopic names are DISTINCT so OPC and
+  notification each keep an independent copy (pub/sub fan-out); a shared name would make them compete.
+- **4d DLQ + redelivery (user chose "custom broker.xml"):** a repo-managed `broker/etc/broker.xml`
+  (mounted read-only into the container's `etc-override/`, which the image copies over the generated
+  `etc/` — mounting into `etc/` directly makes the entrypoint skip `artemis create` and lose `bin/artemis`)
+  adds a per-destination `address-setting` (most-specific match wins over the stock `#` catch-all) with an
+  exponential redelivery backoff (1s × 2, capped 30s) and `max-delivery-attempts=6`, so a poison message
+  is quarantined in the DLQ instead of hot-looping. Complements the producer-side transactional outbox:
+  the outbox guarantees an event is *emitted*; this guarantees a message a consumer keeps rejecting is
+  *parked*, not lost.
+- **Verified live (8 services + container broker):** order 356571019734942207 flowed storefront → OPC
+  (auto-APPROVED) → outbox → inventory fulfil → InvoiceTopic → OPC COMPLETED + notification "Shipped" email
+  (both InvoiceTopic durable subs got their own copy) → OrderStatusTopic → "COMPLETED" email; both outbox
+  rows PUBLISHED. Then **restarted the broker with the volume retained**: all three durable subscriptions
+  survived (visible as persistent queues), Spring auto-reconnected (CONSUMER=1), and a fresh post-restart
+  order (356571477820047871) completed end-to-end with both emails — proving durability the old ephemeral
+  broker could not.
+
+## Money stays `double` (BigDecimal migration deferred) — **DECIDED**
+Prices/totals are represented as Java `double` end-to-end: JMS event records (`PurchaseOrderEvent`,
+`OrderApprovedEvent`, `InvoiceEvent`, `OrderStatusEvent` `totalPrice`/`unitPrice`), SDK DTOs
+(`OrderDtos`, `CatalogDtos`), OPC domain (`OrderLine`, `WarehouseOrder`, `SalesReport`, `ApprovalPolicy`),
+and cart-lib (`CartDtos`/`CartOperations`). DB columns are already `DECIMAL(12,2)`/`DECIMAL(10,2)`, so
+persistence is exact; the imprecision is only in in-JVM arithmetic.
+- **Options considered:** (a) full `BigDecimal` migration across ~47 sites in 6 modules — a breaking JMS + HTTP
+  wire-contract change requiring every producer/consumer to be rebuilt in lockstep; (b) `BigDecimal` only in the
+  OPC domain where money is summed/compared (`ApprovalPolicy` threshold, `SalesReport` aggregation), mapping at
+  the boundary while wire DTOs stay `double`; (c) keep `double`.
+- **Chosen (user): (c) keep `double`, defer the migration.** It matches legacy behaviour (the J2EE Pet Store used
+  `double`/`float` for money throughout), the parity baseline is the goal here, and the DB is the exact record of
+  truth. Avoids a wide, risky contract change for a demo/migration deliverable.
+- **Known limitation (accepted):** IEEE-754 `double` can accumulate sub-cent rounding drift on large sums and can
+  make an `ApprovalPolicy` threshold comparison flip at the exact boundary. Revisit with option (a) or (b) before
+  any real-money production use. Tracked here rather than fixed.

@@ -6,10 +6,14 @@ import com.petstore.customer.client.CustomerDtos.CardDto;
 import com.petstore.customer.client.CustomerDtos.CustomerView;
 import com.petstore.customer.client.CustomerDtos.ProfileDto;
 import com.petstore.customer.client.CustomerDtos.RegisterRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +31,17 @@ import java.util.Optional;
  */
 public class CustomerServiceClient {
 
+    /** Bounded timeouts so a hung/slow customer-service can't block caller threads indefinitely. */
+    static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
+    static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
+
+    /** Bearer scheme prefix for the {@code Authorization} header (RFC 6750). */
+    private static final String BEARER_PREFIX = "Bearer ";
+    /** Roles derived from the login; the reserved {@code admin} user maps to ADMIN, else USER. */
+    private static final String ADMIN_USER_NAME = "admin";
+    private static final String ROLE_ADMIN = "ADMIN";
+    private static final String ROLE_USER = "USER";
+
     private final RestClient http;
 
     /** Use the default base URL ({@code http://localhost:8081}). */
@@ -36,12 +51,24 @@ public class CustomerServiceClient {
 
     /** Use a specific base URL (host/port per environment). */
     public CustomerServiceClient(String baseUrl) {
-        this.http = RestClient.builder().baseUrl(baseUrl).build();
+        this.http = RestClient.builder().baseUrl(baseUrl).requestFactory(timeoutFactory()).build();
     }
 
-    /** Advanced: supply a preconfigured RestClient (e.g. with interceptors/TLS). */
+    /** Advanced: supply a preconfigured RestClient (e.g. with interceptors/TLS/timeouts). */
     public CustomerServiceClient(RestClient restClient) {
         this.http = restClient;
+    }
+
+    /**
+     * A request factory with bounded connect/read timeouts. Without these the default
+     * factory waits forever, so one unresponsive customer-service would tie up every caller
+     * thread (login, registration, account pages) and cascade into the caller's own outage.
+     */
+    private static ClientHttpRequestFactory timeoutFactory() {
+        SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
+        f.setConnectTimeout((int) CONNECT_TIMEOUT.toMillis());
+        f.setReadTimeout((int) READ_TIMEOUT.toMillis());
+        return f;
     }
 
     // ---- auth ----
@@ -52,14 +79,16 @@ public class CustomerServiceClient {
         try {
             Map<String, Object> resp = http.post().uri(CustomerServiceEndpoints.LOGIN)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("userName", userName, "password", password))
+                    .body(Map.of(CustomerServiceEndpoints.FIELD_USER_NAME, userName,
+                            CustomerServiceEndpoints.FIELD_PASSWORD, password))
                     .retrieve().body(Map.class);
-            if (resp == null || resp.get("token") == null) {
+            if (resp == null || resp.get(CustomerServiceEndpoints.FIELD_TOKEN) == null) {
                 return Optional.empty();
             }
-            List<String> roles = "admin".equals(userName) ? List.of("ADMIN") : List.of("USER");
+            List<String> roles = ADMIN_USER_NAME.equals(userName) ? List.of(ROLE_ADMIN) : List.of(ROLE_USER);
             return Optional.of(new AuthResult(
-                    (String) resp.get("token"), (String) resp.get("customerId"), roles));
+                    (String) resp.get(CustomerServiceEndpoints.FIELD_TOKEN),
+                    (String) resp.get(CustomerServiceEndpoints.FIELD_CUSTOMER_ID), roles));
         } catch (HttpClientErrorException.Unauthorized e) {
             return Optional.empty();
         }
@@ -80,7 +109,7 @@ public class CustomerServiceClient {
     public Optional<CustomerView> getCustomer(String id, String bearerToken) {
         try {
             return Optional.ofNullable(http.get().uri(CustomerServiceEndpoints.CUSTOMER, id)
-                    .header("Authorization", bearer(bearerToken))
+                    .header(HttpHeaders.AUTHORIZATION, bearer(bearerToken))
                     .retrieve().body(CustomerView.class));
         } catch (HttpClientErrorException.NotFound e) {
             return Optional.empty();
@@ -109,6 +138,6 @@ public class CustomerServiceClient {
     }
 
     private static String bearer(String token) {
-        return "Bearer " + token;
+        return BEARER_PREFIX + token;
     }
 }

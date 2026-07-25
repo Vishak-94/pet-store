@@ -2,22 +2,36 @@ spring:
   application:
     name: order-processing-service
   datasource:
-    url: jdbc:h2:mem:opc;DB_CLOSE_DELAY=-1
+    # File-based H2 so the authoritative order store SURVIVES restarts (was jdbc:h2:mem,
+    # which wiped every order on shutdown). AUTO_SERVER lets the H2 console / a second
+    # JVM connect to the same file. Path is overridable per env via OPC_DB_PATH.
+    url: jdbc:h2:file:${OPC_DB_PATH:./data/opc};AUTO_SERVER=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
   jpa:
     hibernate:
+      # Schema is owned by Flyway migrations (below), not Hibernate — keep this 'none'.
       ddl-auto: none
     show-sql: false
-  sql:
-    init:
-      mode: always
+  # Versioned schema via Flyway (db/migration/V*.sql). Replaces the old spring.sql.init
+  # bootstrap so schema changes are tracked in a migration history table.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
   # Connect to the SHARED broker hosted by petstore-app-v1 (:61616).
   # Consumes PurchaseOrderQueue + InvoiceTopic; publishes ApprovedOrderQueue.
   artemis:
     mode: native
     broker-url: tcp://localhost:61616
+
+# Transactional outbox relay (OutboxRelay). Events are enqueued in the business
+# transaction and this poller drains them to JMS just after commit. Tunables:
+opc:
+  outbox:
+    poll-ms: 1000          # relay poll interval (fixedDelay between drains)
+    batch-size: 100        # max unpublished rows drained per poll
+    max-attempts: 10       # publish attempts before a row is parked as a poison message
 
 server:
   port: 8088

@@ -37,6 +37,13 @@ import java.util.Locale;
 public class CatalogApiController {
 
     private static final int DEFAULT_COUNT = 10;
+    /** {@code @RequestParam} defaults must be compile-time String constants. */
+    private static final String DEFAULT_START = "0";
+    private static final String DEFAULT_COUNT_STR = "" + DEFAULT_COUNT;
+    /** Legacy sentinel: {@code ?lang=default} means "use the JVM default locale". */
+    private static final String LOCALE_DEFAULT_SENTINEL = "default";
+    /** Separator in a {@code language_country_variant} locale key. */
+    private static final String LOCALE_PART_SEPARATOR = "_";
 
     private final CatalogService catalog;
 
@@ -44,16 +51,21 @@ public class CatalogApiController {
         this.catalog = catalog;
     }
 
+    /**
+     * Parse a legacy {@code language_country_variant} locale key (e.g. {@code en_US}) into a
+     * {@link Locale}. Mirrors the legacy {@code getLocaleFromString}: blank/null → {@link Locale#US},
+     * the sentinel {@code "default"} → the JVM default, otherwise a 1/2/3-part split on {@code _}.
+     */
     private static Locale locale(String lang) {
         if (lang == null || lang.isBlank()) {
             return Locale.US;
         }
         // Legacy getLocaleFromString: "default" → the JVM default locale.
-        if (lang.equalsIgnoreCase("default")) {
+        if (lang.equalsIgnoreCase(LOCALE_DEFAULT_SENTINEL)) {
             return Locale.getDefault();
         }
         // Legacy handled language, language_country and language_country_variant.
-        String[] parts = lang.split("_");
+        String[] parts = lang.split(LOCALE_PART_SEPARATOR);
         return switch (parts.length) {
             case 3 -> new Locale(parts[0], parts[1], parts[2]);
             case 2 -> new Locale(parts[0], parts[1]);
@@ -63,65 +75,72 @@ public class CatalogApiController {
 
     // ---- categories ----
 
+    /** Top-level category listing, one page ({@code start}/{@code count}), localized. */
     @GetMapping(CatalogServiceEndpoints.CATEGORIES)
-    public CategoryPage categories(@RequestParam(defaultValue = "0") int start,
-                                   @RequestParam(defaultValue = "" + DEFAULT_COUNT) int count,
-                                   @RequestParam(value = "lang", required = false) String lang) {
+    public CategoryPage categories(@RequestParam(value = CatalogServiceEndpoints.PARAM_START, defaultValue = DEFAULT_START) int start,
+                                   @RequestParam(value = CatalogServiceEndpoints.PARAM_COUNT, defaultValue = DEFAULT_COUNT_STR) int count,
+                                   @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
         Page page = catalog.getCategories(start, count, locale(lang));
         return new CategoryPage(mapCategories(page.getList()), start, page.isNextPageAvailable());
     }
 
+    /** Single category by id (localized); 404 when the category/locale row is absent. */
     @GetMapping(CatalogServiceEndpoints.CATEGORY_BY_ID)
     public ResponseEntity<CategoryDto> category(@PathVariable String id,
-                                                @RequestParam(value = "lang", required = false) String lang) {
+                                                @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
         return catalog.getCategory(id, locale(lang))
                 .map(c -> ResponseEntity.ok(toDto(c)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    /** One page of products within a category (localized, ordered by name). */
     @GetMapping(CatalogServiceEndpoints.PRODUCTS_IN_CATEGORY)
     public ProductPage productsInCategory(@PathVariable String id,
-                                          @RequestParam(defaultValue = "0") int start,
-                                          @RequestParam(defaultValue = "" + DEFAULT_COUNT) int count,
-                                          @RequestParam(value = "lang", required = false) String lang) {
+                                          @RequestParam(value = CatalogServiceEndpoints.PARAM_START, defaultValue = DEFAULT_START) int start,
+                                          @RequestParam(value = CatalogServiceEndpoints.PARAM_COUNT, defaultValue = DEFAULT_COUNT_STR) int count,
+                                          @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
         Page page = catalog.getProducts(id, start, count, locale(lang));
         return new ProductPage(mapProducts(page.getList()), start, page.isNextPageAvailable());
     }
 
     // ---- products ----
 
+    /** Single product by id (localized); 404 when the product/locale row is absent. */
     @GetMapping(CatalogServiceEndpoints.PRODUCT_BY_ID)
     public ResponseEntity<ProductDto> product(@PathVariable String id,
-                                              @RequestParam(value = "lang", required = false) String lang) {
+                                              @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
         return catalog.getProduct(id, locale(lang))
                 .map(p -> ResponseEntity.ok(toDto(p)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    /** One page of items within a product (localized, ordered by itemid). */
     @GetMapping(CatalogServiceEndpoints.ITEMS_IN_PRODUCT)
     public ItemPage itemsInProduct(@PathVariable String id,
-                                   @RequestParam(defaultValue = "0") int start,
-                                   @RequestParam(defaultValue = "" + DEFAULT_COUNT) int count,
-                                   @RequestParam(value = "lang", required = false) String lang) {
+                                   @RequestParam(value = CatalogServiceEndpoints.PARAM_START, defaultValue = DEFAULT_START) int start,
+                                   @RequestParam(value = CatalogServiceEndpoints.PARAM_COUNT, defaultValue = DEFAULT_COUNT_STR) int count,
+                                   @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
         Page page = catalog.getItems(id, start, count, locale(lang));
         return new ItemPage(mapItems(page.getList()), start, page.isNextPageAvailable());
     }
 
     // ---- items ----
 
+    /** Single item by id (localized, with resolved category); 404 when absent. */
     @GetMapping(CatalogServiceEndpoints.ITEM_BY_ID)
     public ResponseEntity<ItemDto> item(@PathVariable String id,
-                                        @RequestParam(value = "lang", required = false) String lang) {
+                                        @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
         return catalog.getItem(id, locale(lang))
                 .map(i -> ResponseEntity.ok(toDto(i)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    /** Keyword item search (one page); blank keyword → empty page (legacy-faithful tokenized OR search). */
     @GetMapping(CatalogServiceEndpoints.ITEMS_SEARCH)
-    public ItemPage search(@RequestParam(defaultValue = "") String keyword,
-                           @RequestParam(defaultValue = "0") int start,
-                           @RequestParam(defaultValue = "" + DEFAULT_COUNT) int count,
-                           @RequestParam(value = "lang", required = false) String lang) {
+    public ItemPage search(@RequestParam(value = CatalogServiceEndpoints.PARAM_KEYWORD, defaultValue = "") String keyword,
+                           @RequestParam(value = CatalogServiceEndpoints.PARAM_START, defaultValue = DEFAULT_START) int start,
+                           @RequestParam(value = CatalogServiceEndpoints.PARAM_COUNT, defaultValue = DEFAULT_COUNT_STR) int count,
+                           @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
         Page page = catalog.searchItems(keyword, start, count, locale(lang));
         return new ItemPage(mapItems(page.getList()), start, page.isNextPageAvailable());
     }

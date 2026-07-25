@@ -1,0 +1,9 @@
+# Dev-only overrides. Activate with: --spring.profiles.active=dev (or SPRING_PROFILES_ACTIVE=dev).
+# Enables the H2 web console for local debugging ONLY. The console gives unauthenticated
+# arbitrary-SQL access to the inventory table, so it must never be active in a shared or
+# production environment — hence it is off in the base application.yml and only turned on
+# here, and the SecurityConfig only opens /h2-console/** when this profile is active.
+spring:
+  h2:
+    console:
+      enabled: true

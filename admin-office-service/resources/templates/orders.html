@@ -4,7 +4,8 @@
 <body>
 <div style="background:#eee;padding:8px;border-bottom:2px solid #B23A48">
     <b>Warehouse (Admin)</b> &nbsp;|&nbsp;
-    <a th:href="@{/warehouse/orders}">Orders</a>
+    <a th:href="@{/warehouse/orders}">Pending Approval</a> &nbsp;|&nbsp;
+    <a th:href="@{/warehouse/orders/all}">All Orders</a>
     <span style="float:right">
         <form th:action="@{/warehouse/logout}" method="post" style="display:inline">
             <button type="submit">Sign Off</button>

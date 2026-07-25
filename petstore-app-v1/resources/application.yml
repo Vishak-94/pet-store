@@ -5,16 +5,20 @@ spring:
   # No database — the storefront persists nothing (legacy model): it builds the
   # order and publishes it; order-processing-service is the authoritative store.
 
-  # Embedded ActiveMQ Artemis broker — JMS is preserved (queues + InvoiceTopic).
-  # The storefront hosts the shared broker so all services connect to :61616.
+  # ActiveMQ Artemis — JMS is preserved (queues + InvoiceTopic). The broker now runs
+  # as a STANDALONE container (see repo docker-compose.yml), externalized out of this
+  # JVM. The storefront is a plain client of it, exactly like the other services; it
+  # no longer hosts the broker. (Tests override this back to an embedded in-VM broker
+  # via test/resources/application.yml so `mvn test` needs no running container.)
   artemis:
-    # Embedded broker that ALSO listens on tcp://localhost:61616 so admin-office-service
-    # can connect to the same broker (shared queue across services).
-    mode: embedded
-    broker-url: tcp://localhost:61616
+    mode: native
+    broker-url: ${BROKER_URL:tcp://localhost:61616}
+    # CRITICAL: `mode: native` only picks the connection factory (connect to broker-url).
+    # The embedded broker SERVER is a separate switch that defaults to TRUE whenever
+    # artemis-jakarta-server is on the classpath — so it must be turned OFF explicitly,
+    # otherwise the storefront would ALSO boot an in-VM broker and never use the container.
     embedded:
-      enabled: true
-      persistent: false
+      enabled: false
 
 server:
   port: 8080
@@ -38,6 +42,17 @@ services:
   # Login is delegated to auth-service (central IdP); auth-client holds the path.
   auth:
     base-url: ${AUTH_SERVICE_URL:http://localhost:8086}
+
+# Health / readiness probes + metrics (Spring Boot Actuator). Matches the other
+# services; keep the exposed set minimal (no env/beans/heapdump on the public port).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
 
 # Cart runs IN-PROCESS via the embeddable cart library (no standalone server).
 # In-memory carts with a sliding TTL — a session-timeout analog.

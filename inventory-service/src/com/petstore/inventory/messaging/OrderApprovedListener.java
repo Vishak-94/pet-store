@@ -31,17 +31,22 @@ public class OrderApprovedListener {
         this.publisher = publisher;
     }
 
-    @JmsListener(destination = "ApprovedOrderQueue", containerFactory = "queueFactory")
+    @JmsListener(destination = Destinations.APPROVED_ORDER_NAME, containerFactory = "queueFactory")
     public void onApprovedOrder(OrderApprovedEvent order) {
         log.info("Received approved order {} for fulfilment ({} lines)",
                 order.orderId(), order.lines() == null ? 0 : order.lines().size());
         boolean shipped;
         try {
             shipped = fulfilment.fulfil(order);
-        } catch (RuntimeException e) {
+        } catch (FulfilmentService.BackorderException e) {
+            // EXPECTED business outcome — a line lost the stock race. Nothing was
+            // decremented (the tx rolled back); report shipped=false and ACK the message.
             log.info("Order {} not shipped: {}", order.orderId(), e.getMessage());
             shipped = false;
         }
+        // Any OTHER RuntimeException (lock timeout, DB/broker failure) intentionally
+        // propagates: fulfilment did not complete, so we must NOT publish a false
+        // invoice or ACK the message — let JMS redeliver it (consumer is idempotent).
         double total = order.lines() == null ? 0d : order.lines().stream()
                 .mapToDouble(l -> l.unitPrice() * l.quantity()).sum();
         // Publish to the TOPIC — every subscriber (warehouse, notifications, …) gets a copy.

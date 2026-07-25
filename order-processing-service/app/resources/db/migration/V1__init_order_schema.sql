@@ -1,4 +1,5 @@
--- warehouse-service owns order_status (+ order read-model) and inventory.
+-- OPC owns order_status (+ order read-model). Inventory lives in inventory-service
+-- (DB-per-service); admin credentials live in auth-service (the central IdP).
 
 CREATE TABLE IF NOT EXISTS wh_order (
     order_id VARCHAR(20) NOT NULL,
@@ -44,9 +45,3 @@ CREATE TABLE IF NOT EXISTS wh_line (
     unit_price DECIMAL(12,2) NOT NULL,
     CONSTRAINT pk_wh_line PRIMARY KEY (id)
 );
-
--- NOTE: inventory table moved to inventory-service (DB-per-service). Warehouse
--- owns only order status + read-model now; fulfilment happens over JMS.
-
--- NOTE: no credential store here anymore. Admin logins are authenticated by
--- auth-service (the central IdP); warehouse-service only VERIFIES RS256 tokens.

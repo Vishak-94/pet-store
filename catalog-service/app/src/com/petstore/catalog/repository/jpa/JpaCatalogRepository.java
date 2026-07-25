@@ -43,9 +43,12 @@ public class JpaCatalogRepository implements CatalogRepository {
         this.itemDetails = itemDetails;
     }
 
+    /** Default locale key when none is supplied — legacy columns are keyed like {@code en_US}. */
+    private static final String DEFAULT_LOCALE_KEY = "en_US";
+
     private static String lang(Locale locale) {
         // Legacy locale keys look like "en_US"; match that column format.
-        return locale == null ? "en_US" : locale.toString();
+        return locale == null ? DEFAULT_LOCALE_KEY : locale.toString();
     }
 
     @Override

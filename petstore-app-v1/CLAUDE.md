@@ -1,9 +1,10 @@
 # petstore-app-v1 — Claude Code guide
 
 The **:8080 storefront** of the migrated Java Pet Store. Serves the HTML shopping UI
-(browse → cart → checkout, sign-on, registration, account self-service), hosts the
-**embedded ActiveMQ Artemis broker** the whole fleet shares, and embeds the in-process
-**cart-lib**. Java package root: `com.petstore`. Spring Boot 3.3.5 / Java 21.
+(browse → cart → checkout, sign-on, registration, account self-service) and embeds the
+in-process **cart-lib**. It is a plain **client** of the externalized ActiveMQ Artemis
+broker (a standalone container — see the repo `docker-compose.yml`); it no longer hosts
+the broker. Java package root: `com.petstore`. Spring Boot 3.3.5 / Java 21.
 
 > Repo-wide conventions (build/run scripts, JMS contract, hexagonal rules, auth model,
 > order workflow) live in the **`petstore-dev`** skill — read it first and don't duplicate
@@ -20,7 +21,7 @@ See also: [`docs/LLD.md`](docs/LLD.md) (class + sequence diagrams), the repo roo
 | _(root)_ | `PetStoreApplication` — `@SpringBootApplication @EnableJms @ConfigurationPropertiesScan` |
 | `catalog/web`, `catalog/domain`, `catalog/` | `CatalogController`; framework-free view models `Category`/`Product`/`Item`; `CatalogViewMapper` (SDK DTO → view model) |
 | `cart/web`, `cart/service`, `cart/config`, `cart/domain` | `CartController`, `CartIdFilter`; `CartService` (adapter over cart-lib); `CartConfig` (wires `CartStore`/`CartOperations`); `CartItem` |
-| `order/web`, `order/service`, `order/messaging` | `CheckoutController` (JSON), `CheckoutForm`, `ContactInfoForm`, `MissingFormDataException`; `OrderService`, `OrderIdGenerator`, `EmptyCartException`; `EmbeddedBrokerConfig` |
+| `order/web`, `order/service` | `CheckoutController` (JSON), `CheckoutForm`, `ContactInfoForm`, `MissingFormDataException`; `OrderService`, `OrderIdGenerator`, `EmptyCartException` |
 | `customer/web` | `CustomerController` — account self-service (M4) |
 | `security` | `SecurityConfig`, `CustomerServiceAuthProvider`, `LoginController`, `SignOnLocaleSuccessHandler` |
 | `config` | `WebConfig` (i18n), `HttpClientConfig` (SDK beans), `ServiceEndpoints` (`@ConfigurationProperties`) |
@@ -53,9 +54,13 @@ auth :8086) should be up for the UI to fully work.
    then empties the cart. No DB, no JPA, no order table — the OPC (order-processing-service)
    is the authoritative store. There is deliberately **no** `spring-boot-starter-data-jpa` in
    `pom.xml`. Do not add order status/lookup endpoints here (status is owned by OPC on :8088).
-2. **This module hosts the shared broker.** `application.yml` runs Artemis `mode: embedded`,
-   and `EmbeddedBrokerConfig` opens the Netty TCP acceptor on `tcp://0.0.0.0:61616` so other
-   services connect to the same broker. Keep it embedded + TCP-open; start this app first.
+2. **This module is a broker CLIENT, not the broker host.** `application.yml` runs Artemis
+   `mode: native` with `embedded.enabled: false` and connects to `broker-url`
+   (`${BROKER_URL:tcp://localhost:61616}`) — the standalone container in the repo
+   `docker-compose.yml`. Start the broker container first (`run-all.sh` does this). Tests
+   override back to an in-VM embedded broker (`test/resources/application.yml`) so `mvn test`
+   needs no running container. Do NOT re-add an embedded broker server or a TCP acceptor to
+   production config — the fleet connects to the container, not to this JVM.
 3. **Cart is session-local via a cart-id cookie, not a `@SessionScope` bean.** `CartIdFilter`
    mints/reads a `cartId` cookie (HttpOnly, 128-bit SecureRandom) and stashes it on the request;
    `CartService` reads it from `RequestContextHolder` and delegates to the in-process cart-lib

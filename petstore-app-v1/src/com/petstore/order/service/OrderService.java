@@ -54,12 +54,26 @@ public class OrderService {
     public OrderPlaced checkout(String userId, String emailId,
                                 PurchaseOrderEvent.ContactInfo shipTo,
                                 PurchaseOrderEvent.ContactInfo billTo) {
+        return checkout(ids.nextId(), userId, emailId, shipTo, billTo);
+    }
+
+    /**
+     * Places an order using a <b>caller-supplied</b> {@code orderId} instead of
+     * minting a fresh one — the idempotent checkout path. The HTML storefront mints
+     * the id when it renders the checkout page (a server-side synchronizer token) and
+     * passes it here on submit, so a refresh / double-click / multi-tab replay carries
+     * the <i>same</i> id and the Order Processing Center's {@code findById} dedup (keyed
+     * on the {@code order_id} primary key) collapses it to a no-op. The id must be a
+     * server-minted {@link OrderIdGenerator} value — never trusted straight from the client.
+     */
+    public OrderPlaced checkout(String orderId, String userId, String emailId,
+                                PurchaseOrderEvent.ContactInfo shipTo,
+                                PurchaseOrderEvent.ContactInfo billTo) {
         List<CartItem> items = cart.getItems();
         if (items.isEmpty()) {
             throw new EmptyCartException();
         }
 
-        String orderId = ids.nextId();
         List<PurchaseOrderEvent.Line> lines = new java.util.ArrayList<>();
         double total = 0d;
         for (CartItem ci : items) {

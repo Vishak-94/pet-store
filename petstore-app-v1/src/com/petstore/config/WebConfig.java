@@ -26,18 +26,30 @@ public class WebConfig implements WebMvcConfigurer {
     public static final List<Locale> SUPPORTED = List.of(
             Locale.US, Locale.JAPAN, Locale.SIMPLIFIED_CHINESE);   // en_US, ja_JP, zh_CN
 
+    /**
+     * The locale request-param AND cookie name — a single contract shared by the
+     * {@code ?lang=} switch, the persisting cookie, the language switcher
+     * ({@code GlobalModelAdvice.langSwitchBase}) and the sign-on locale handler.
+     */
+    public static final String LOCALE_PARAM = "lang";
+    /** Basename of the UI message bundles (messages.properties + _en/_ja/_zh). */
+    private static final String MESSAGES_BASENAME = "classpath:messages";
+    private static final String MESSAGES_ENCODING = "UTF-8";
+    /** Cookie path scoping the locale to the whole app. */
+    private static final String COOKIE_PATH = "/";
+
     @Bean
     LocaleResolver localeResolver() {
-        CookieLocaleResolver resolver = new CookieLocaleResolver("lang");
+        CookieLocaleResolver resolver = new CookieLocaleResolver(LOCALE_PARAM);
         resolver.setDefaultLocale(Locale.US);
-        resolver.setCookiePath("/");
+        resolver.setCookiePath(COOKIE_PATH);
         return resolver;
     }
 
     @Bean
     LocaleChangeInterceptor localeChangeInterceptor() {
         LocaleChangeInterceptor interceptor = new LocaleChangeInterceptor();
-        interceptor.setParamName("lang");   // ?lang=ja_JP switches + persists via the cookie
+        interceptor.setParamName(LOCALE_PARAM);   // ?lang=ja_JP switches + persists via the cookie
         return interceptor;
     }
 
@@ -50,8 +62,8 @@ public class WebConfig implements WebMvcConfigurer {
     @Bean
     MessageSource messageSource() {
         ReloadableResourceBundleMessageSource ms = new ReloadableResourceBundleMessageSource();
-        ms.setBasename("classpath:messages");
-        ms.setDefaultEncoding("UTF-8");
+        ms.setBasename(MESSAGES_BASENAME);
+        ms.setDefaultEncoding(MESSAGES_ENCODING);
         ms.setFallbackToSystemLocale(false);
         return ms;
     }

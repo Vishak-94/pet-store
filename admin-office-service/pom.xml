@@ -59,6 +59,20 @@
             <version>1.0.0</version>
         </dependency>
 
+        <!-- Resilience: circuit breaker + bounded retry around the OPC/auth SDK calls
+             (wired in SecurityConfig via ResilientRestClient). Core modules only (no
+             Spring Boot starter) — resilience lives at the RestClient interceptor level. -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-retry</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

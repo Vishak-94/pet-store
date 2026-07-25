@@ -10,7 +10,7 @@
     <p><strong>Product:</strong> <span th:text="${item.productName}">product</span></p>
     <p><strong>Description:</strong> <span th:text="${item.description}">desc</span></p>
     <p><strong>Attribute:</strong> <span th:text="${item.attribute}">attr</span></p>
-    <p><strong>List price:</strong> <span th:text="${item.listCost}">0.0</span></p>
+    <p><strong>List price:</strong> <span th:text="${#numbers.formatCurrency(item.listCost)}">$0.00</span></p>
     <p>Cart quantity:
         <span th:replace="~{fragments/stepper :: stepper(${item.itemId}, ${itemQty})}">stepper</span>
     </p>

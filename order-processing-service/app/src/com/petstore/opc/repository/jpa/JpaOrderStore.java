@@ -14,6 +14,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * JPA adapter for the {@link OrderStore} port — the persistence side of the OPC
+ * hexagon. It maps between the framework-free domain {@link WarehouseOrder} and the
+ * JPA {@code WarehouseOrderEntity}/{@code WarehouseLineEntity}/{@code ContactInfoEmbeddable}
+ * (the {@code toDomain}/{@code toEmbeddable} helpers), so the domain never sees JPA and
+ * persistence stays swappable behind the port. Delegates all queries — status lookup,
+ * status filter, newest-first listing, and the GROUP BY sales aggregation — to
+ * {@link WarehouseOrderJpaRepository}.
+ */
 @Repository
 public class JpaOrderStore implements OrderStore {
 
@@ -71,6 +80,11 @@ public class JpaOrderStore implements OrderStore {
     }
 
     @Override
+    public List<WarehouseOrder> findAllByCreatedDesc() {
+        return jpa.findAllByOrderByCreatedDesc().stream().map(this::toDomain).toList();
+    }
+
+    @Override
     public SalesReport aggregateSales(Instant start, Instant end, String categoryId) {
         boolean byItem = categoryId != null;
         List<Object[]> rows = byItem
@@ -81,7 +95,7 @@ public class JpaOrderStore implements OrderStore {
                         r[1] == null ? 0.0 : ((Number) r[1]).doubleValue(),
                         r[2] == null ? 0 : ((Number) r[2]).intValue()))
                 .toList();
-        return new SalesReport(byItem ? "item" : "category", buckets);
+        return new SalesReport(byItem ? SalesReport.GROUP_BY_ITEM : SalesReport.GROUP_BY_CATEGORY, buckets);
     }
 
     private WarehouseOrder toDomain(WarehouseOrderEntity e) {

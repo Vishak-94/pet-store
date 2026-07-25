@@ -83,10 +83,17 @@ class CartServiceAdapterTest {
     }
 
     @Test
-    void getSubTotal_and_getCount_readFromView() {
+    void getSubTotal_readsFromView() {
         when(ops.view(CART_ID)).thenReturn(new CartView(List.of(), 51.50, 2));
         assertThat(cart.getSubTotal()).isEqualTo(51.50);
+    }
+
+    @Test
+    void getCount_delegatesToCatalogFreeCount() {
+        // getCount now uses the catalog-free count() (nav badge on every page), not view().
+        when(ops.count(CART_ID)).thenReturn(2);
         assertThat(cart.getCount()).isEqualTo(2);
+        verify(ops).count(CART_ID);
     }
 
     @Test

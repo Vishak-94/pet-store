@@ -21,6 +21,23 @@ public class OrderMailComposer {
     /** Legacy MailCompletedOrderMDB subject prefix (order fully shipped/completed). */
     private static final String COMPLETED_SUBJECT = "Java Pet Store Order COMPLETED: ";
 
+    /**
+     * Order-status values received on the wire (from {@code OrderStatusEvent.status}).
+     * These mirror the OPC {@code OrderStatus} enum names — kept as constants here (rather
+     * than depending on the OPC domain) since this leaf service only reads the string; they
+     * are a shared contract, not config.
+     */
+    private static final String STATUS_COMPLETED = "COMPLETED";
+    private static final String STATUS_DENIED = "DENIED";
+
+    /** Fallback recipient parts when an order carried no email address (legacy tolerated this). */
+    private static final String FALLBACK_USER = "customer";
+    private static final String FALLBACK_DOMAIN = "@petstore.invalid";
+
+    /** Customer-facing wording for the approved/declined order-status body. */
+    private static final String OUTCOME_DENIED = "has been declined";
+    private static final String OUTCOME_APPROVED = "has been approved and is being prepared for shipment";
+
     /** Compose the "order shipped" (or backorder) email for an invoice event. */
     public Email fromInvoice(InvoiceEvent invoice) {
         String to = recipient(invoice);
@@ -55,7 +72,7 @@ public class OrderMailComposer {
      */
     public Email fromStatus(OrderStatusEvent event) {
         String to = recipient(event.emailId(), event.userId());
-        if ("COMPLETED".equals(event.status())) {
+        if (STATUS_COMPLETED.equals(event.status())) {
             String body = """
                     Dear Customer,
 
@@ -67,8 +84,7 @@ public class OrderMailComposer {
                     — The Java Pet Store Team""".formatted(event.orderId(), event.totalPrice());
             return new Email(to, COMPLETED_SUBJECT + event.orderId(), body);
         }
-        String outcome = "DENIED".equals(event.status())
-                ? "has been declined" : "has been approved and is being prepared for shipment";
+        String outcome = STATUS_DENIED.equals(event.status()) ? OUTCOME_DENIED : OUTCOME_APPROVED;
         String body = """
                 Dear Customer,
 
@@ -90,7 +106,7 @@ public class OrderMailComposer {
             return emailId;
         }
         // Fallback if the order carried no email (legacy also tolerated missing addr).
-        String who = userId == null ? "customer" : userId;
-        return who + "@petstore.invalid";
+        String who = userId == null ? FALLBACK_USER : userId;
+        return who + FALLBACK_DOMAIN;
     }
 }

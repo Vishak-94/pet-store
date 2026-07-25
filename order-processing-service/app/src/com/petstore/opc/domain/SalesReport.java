@@ -12,6 +12,14 @@ import java.util.List;
  */
 public record SalesReport(String groupBy, List<SalesBucket> buckets) {
 
+    /**
+     * The two {@link #groupBy} discriminators, echoed to the client so it knows how to
+     * label the chart axis. Kept as named constants (not scattered literals) so the
+     * aggregation adapter and any reader agree on the exact spelling.
+     */
+    public static final String GROUP_BY_CATEGORY = "category";
+    public static final String GROUP_BY_ITEM = "item";
+
     /** One aggregation bucket keyed by category id or item id. */
     public record SalesBucket(String key, double revenue, int quantity) {
     }

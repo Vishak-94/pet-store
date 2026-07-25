@@ -8,6 +8,14 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * JPA adapter for the {@link InventoryStore} port — the persistence side of the
+ * hexagon. Translates the domain-level stock operations into Spring Data calls on
+ * {@link InventoryJpaRepository}. The oversell-safety contract lives here:
+ * {@link #tryReserve} does its check-and-decrement inside a {@code @Transactional}
+ * pessimistic row lock ({@code SELECT … FOR UPDATE}), so concurrent fulfilments
+ * can never drive stock negative (the DB {@code quantity >= 0} CHECK is the floor).
+ */
 @Repository
 public class JpaInventoryStore implements InventoryStore {
 

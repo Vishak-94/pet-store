@@ -24,26 +24,39 @@ interface CategoryDetailRepository extends JpaRepository<CategoryDetailEntity, C
     long countByLocale(String locale);
 }
 
+/** Locale-independent product rows — used to resolve a product's category membership ({@code product.catid}). */
 interface ProductBaseRepository extends JpaRepository<ProductBaseEntity, String> {
+    /** All products belonging to a category (structural lookup; no locale). */
     List<ProductBaseEntity> findByCatid(String catid);
 }
 
+/** Localized product text keyed by {@code (productid, locale)}; backs product lookup and the by-category listing. */
 interface ProductDetailRepository extends JpaRepository<ProductDetailEntity, ProductDetailEntity.Key> {
+    /** Single localized product; empty when the product/locale pair has no row. */
     Optional<ProductDetailEntity> findByProductidAndLocale(String productid, String locale);
 
+    /** Localized products in a category, ordered by name (Slice → count+1 fetch for {@code hasNext}). */
     @Query("select pd from ProductDetailEntity pd, ProductBaseEntity pb "
             + "where pd.productid = pb.productid and pb.catid = :catid and pd.locale = :locale "
             + "order by pd.name")
     Slice<ProductDetailEntity> findByCategory(String catid, String locale, Pageable pageable);
 }
 
+/** Locale-independent item rows — used to resolve an item's product membership ({@code item.productid}). */
 interface ItemBaseRepository extends JpaRepository<ItemBaseEntity, String> {
+    /** All items belonging to a product (structural lookup; no locale). */
     List<ItemBaseEntity> findByProductid(String productid);
 }
 
+/**
+ * Localized item text/pricing keyed by {@code (itemid, locale)}; backs item lookup and the
+ * by-product listing, and mixes in the dynamic keyword {@link ItemSearchRepository#search}.
+ */
 interface ItemDetailRepository extends JpaRepository<ItemDetailEntity, ItemDetailEntity.Key>, ItemSearchRepository {
+    /** Single localized item; empty when the item/locale pair has no row. */
     Optional<ItemDetailEntity> findByItemidAndLocale(String itemid, String locale);
 
+    /** Localized items within a product, ordered by itemid (Slice → count+1 fetch for {@code hasNext}). */
     @Query("select id from ItemDetailEntity id, ItemBaseEntity ib "
             + "where id.itemid = ib.itemid and ib.productid = :productid and id.locale = :locale "
             + "order by id.itemid")
@@ -65,6 +78,13 @@ interface ItemSearchRepository {
     List<ItemDetailEntity> search(List<String> tokens, String locale, int offset, int limit);
 }
 
+/**
+ * Runtime-assembled implementation of {@link ItemSearchRepository}. Because the token count is
+ * dynamic, the JPQL WHERE clause is built with a {@link StringBuilder} (one OR-group per token,
+ * each bound to a distinct {@code :tN} parameter) rather than a static derived/JPQL query. The
+ * four-way join reaches product name + category catid + item descn — the exact legacy
+ * {@code SEARCH_ITEMS} column set — with paging applied via {@code setFirstResult}/{@code setMaxResults}.
+ */
 class ItemSearchRepositoryImpl implements ItemSearchRepository {
 
     @PersistenceContext

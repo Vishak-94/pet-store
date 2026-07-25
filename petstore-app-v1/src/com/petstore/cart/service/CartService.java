@@ -60,9 +60,13 @@ public class CartService {
         cart.setQuantity(cartId(), itemId, newQty);
     }
 
-    /** Number of DISTINCT line items (legacy getCount == cart.size()). */
+    /**
+     * Number of DISTINCT line items (legacy getCount == cart.size()). Uses the
+     * catalog-free {@link CartOperations#count} — the nav badge renders on every page,
+     * so it must not fan out a catalog call per line (nor fail when catalog is down).
+     */
     public int getCount() {
-        return cart.view(cartId()).count();
+        return cart.count(cartId());
     }
 
     /** Current quantity of an item in the cart (0 if not present). */

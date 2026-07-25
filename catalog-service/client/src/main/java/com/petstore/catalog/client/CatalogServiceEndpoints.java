@@ -36,4 +36,17 @@ public final class CatalogServiceEndpoints {
 
     /** GET — keyword search over items: ?keyword=&start=&count=&lang= */
     public static final String ITEMS_SEARCH = "/api/items";
+
+    /**
+     * Query-parameter names on the wire. Shared by the client (which sets them) and the
+     * controller (which reads them via {@code @RequestParam}), so the two ends can't drift
+     * on a param name. Contract literals — kept as constants, never externalized to config.
+     */
+    public static final String PARAM_START = "start";
+    public static final String PARAM_COUNT = "count";
+    public static final String PARAM_LANG = "lang";
+    public static final String PARAM_KEYWORD = "keyword";
+
+    /** Path variable name used in the {@code {id}} templated paths above. */
+    public static final String PATH_VAR_ID = "id";
 }

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"/><title>Warehouse — All Orders</title></head>
+<body>
+<div style="background:#eee;padding:8px;border-bottom:2px solid #B23A48">
+    <b>Warehouse (Admin)</b> &nbsp;|&nbsp;
+    <a th:href="@{/warehouse/orders}">Pending Approval</a> &nbsp;|&nbsp;
+    <a th:href="@{/warehouse/orders/all}">All Orders</a>
+    <span style="float:right">
+        <form th:action="@{/warehouse/logout}" method="post" style="display:inline">
+            <button type="submit">Sign Off</button>
+        </form>
+    </span>
+</div>
+<h1>All Orders</h1>
+<p><em>Every order across all statuses, most recent first. Read-only — approve/deny lives on the
+    <a th:href="@{/warehouse/orders}">Pending Approval</a> console.</em></p>
+<table border="1" cellpadding="6">
+    <thead><tr><th>Order</th><th>Customer</th><th>Received</th><th>Status</th><th>Lines</th><th>Total</th></tr></thead>
+    <tbody>
+    <tr th:each="o : ${orders}">
+        <td th:text="${o.orderId}">id</td>
+        <td th:text="${o.user}">user</td>
+        <td th:text="${o.received}">received</td>
+        <td th:text="${o.status}">STATUS</td>
+        <td th:text="${o.lines}">0</td>
+        <td th:text="${#numbers.formatCurrency(o.total)}">$0.00</td>
+    </tr>
+    <tr th:if="${#lists.isEmpty(orders)}"><td colspan="6"><em>No orders yet.</em></td></tr>
+    </tbody>
+</table>
+</body>
+</html>

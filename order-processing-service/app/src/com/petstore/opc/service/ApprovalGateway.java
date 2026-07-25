@@ -2,30 +2,31 @@ package com.petstore.opc.service;
 
 import com.petstore.messaging.Destinations;
 import com.petstore.messaging.Events;
-import com.petstore.messaging.MessagePublisher;
 import com.petstore.messaging.events.OrderApprovedEvent;
 import com.petstore.opc.domain.OrderLine;
 import com.petstore.opc.domain.WarehouseOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * Publishes an {@link OrderApprovedEvent} to inventory-service over the
- * ApprovedOrderQueue (via the shared {@link MessagePublisher}). Publishes AFTER
- * commit so a rolled-back approval never dispatches for fulfilment.
+ * Dispatches an {@link OrderApprovedEvent} to inventory-service over the
+ * ApprovedOrderQueue. Instead of publishing to JMS directly, it appends the event to
+ * the transactional outbox ({@link OutboxWriter}) <em>in the caller's transaction</em>,
+ * so the event and the order-status write commit or roll back atomically; the
+ * {@link OutboxRelay} publishes it just after commit. This replaces the old after-commit
+ * {@code TransactionSynchronization} publish, which could commit the status change but
+ * lose the JMS send on a crash in the window between commit and send.
  */
 @Component
 public class ApprovalGateway {
 
     private static final Logger log = LoggerFactory.getLogger(ApprovalGateway.class);
 
-    private final MessagePublisher publisher;
+    private final OutboxWriter outbox;
 
-    public ApprovalGateway(MessagePublisher publisher) {
-        this.publisher = publisher;
+    public ApprovalGateway(OutboxWriter outbox) {
+        this.outbox = outbox;
     }
 
     public void dispatchForFulfilment(WarehouseOrder order) {
@@ -33,21 +34,8 @@ public class ApprovalGateway {
                 Events.meta(OrderApprovedEvent.TYPE),
                 order.orderId(), order.userId(), order.emailId(), order.locale(),
                 order.lines().stream().map(this::toLine).toList());
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    send(event);
-                }
-            });
-        } else {
-            send(event);
-        }
-    }
-
-    private void send(OrderApprovedEvent event) {
-        publisher.publish(Destinations.APPROVED_ORDER, event);
-        log.info("Order {} dispatched to inventory-service for fulfilment", event.orderId());
+        outbox.enqueue(Destinations.APPROVED_ORDER, event, order.orderId());
+        log.info("Order {} queued in outbox for fulfilment dispatch to inventory-service", order.orderId());
     }
 
     private OrderApprovedEvent.Line toLine(OrderLine l) {

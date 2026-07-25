@@ -1,8 +1,31 @@
 #!/usr/bin/env bash
-# Start all services. petstore-app-v1 hosts the embedded ActiveMQ Artemis broker
-# on :61616, so it MUST start first; the other services connect to that broker.
+# Start all services. The ActiveMQ Artemis broker now runs as a STANDALONE container
+# (docker-compose.yml) on :61616 and is started FIRST; every service — including the
+# storefront — connects to it as a plain client. (Previously petstore-app-v1 hosted
+# an embedded broker; it no longer does.)
 set -uo pipefail
 cd "$(dirname "$0")"
+
+# 0) Externalized JMS broker (container) — must be up before any service connects.
+start_broker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "!! docker not found — install it (or run 'colima start') then re-run." >&2
+    exit 1
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo "!! docker daemon not reachable — start it (e.g. 'colima start') then re-run." >&2
+    exit 1
+  fi
+  echo "==> starting broker (Artemis container, :61616)"
+  docker compose up -d broker >/dev/null 2>&1 || { echo "    !! docker compose up failed"; exit 1; }
+  # Wait for the CORE acceptor to accept a TCP connection on :61616.
+  for i in $(seq 1 60); do
+    if nc -z localhost 61616 >/dev/null 2>&1; then echo "    broker up"; return 0; fi
+    sleep 1
+  done
+  echo "    !! broker did not open :61616 in 60s — see 'docker compose logs broker'"; exit 1
+}
+start_broker
 
 # Resolve a Java 21 runtime (the apps are compiled for Java 21 / class 61).
 # Prefer JAVA_HOME if it already points at a 21 JDK, else auto-detect via
@@ -23,6 +46,13 @@ echo "Using JAVA_HOME=$JAVA_HOME"
 "$JAVA" -version 2>&1 | head -1
 mkdir -p logs
 
+# Run the fleet under the 'dev' Spring profile. Its ONLY effect is to enable each
+# service's H2 web console (/h2-console) for local DB browsing — off by default because
+# the console is an unauthenticated SQL shell. No other dev-profile beans exist, so this
+# is a safe local-only convenience. To run WITHOUT the DB consoles: SPRING_PROFILES_ACTIVE= ./run-all.sh
+export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE-dev}"
+[ -n "$SPRING_PROFILES_ACTIVE" ] && echo "Spring profile: $SPRING_PROFILES_ACTIVE (H2 consoles enabled)"
+
 start() {  # name  jar  port  started-marker
   local name=$1 jar=$2 port=$3 marker=$4
   echo "==> starting $name (:$port)"
@@ -34,7 +64,7 @@ start() {  # name  jar  port  started-marker
   echo "    !! $name did not report started in 60s — see logs/$name.log"; return 1
 }
 
-# 1) Broker host + storefront FIRST (owns the :61616 broker).
+# 1) Storefront (broker client; the broker container is already up above).
 start petstore-app-v1 petstore-app-v1/target/petstore-app-v1-1.0.0.jar 8080 "Started PetStoreApplication"
 
 # 2) auth-service (issuer) — others verify against it.
@@ -49,5 +79,36 @@ start inventory-service  inventory-service/target/inventory-service-1.0.0.jar   
 start notification-service notification-service/target/notification-service-1.0.0.jar 8087 "Started NotificationServiceApplication"
 
 echo ""
-echo "All services started. Storefront: http://localhost:8080/"
+echo "======================================================================"
+echo " All services started. Open these in a browser:"
+echo "----------------------------------------------------------------------"
+echo " UIs (have a web front-end):"
+echo "   Storefront (shop + customer account)  http://localhost:8080/"
+echo "     login:    http://localhost:8080/login        (j2ee / j2ee)"
+echo "     register: http://localhost:8080/register"
+echo "     cart:     http://localhost:8080/cart"
+echo "   Warehouse / admin console             http://localhost:8082/warehouse/orders"
+echo "     login:    http://localhost:8082/warehouse/login   (admin / admin)"
+echo "   Inventory console                     http://localhost:8085/inventory"
+echo "     login:    http://localhost:8085/inventory/login   (supplier / supplier)"
+echo "   JMS broker console (Artemis)          http://localhost:8161/            (admin / admin)"
+echo "----------------------------------------------------------------------"
+echo " API-only services (JSON — no UI; browsing returns data or 401):"
+echo "   customer-service   http://localhost:8081     catalog-service  http://localhost:8083"
+echo "   auth-service       http://localhost:8086     notification     http://localhost:8087"
+echo "   order-processing   http://localhost:8088"
+echo "   health probe example: http://localhost:8088/actuator/health"
+echo "----------------------------------------------------------------------"
+echo " Database consoles (H2 web UI — only when started with the 'dev' profile):"
+echo "   customer DB          http://localhost:8081/h2-console   (jdbc:h2:file:./data/customer)"
+echo "   catalog DB           http://localhost:8083/h2-console   (jdbc:h2:file:./data/catalog)"
+echo "   inventory DB         http://localhost:8085/h2-console   (jdbc:h2:file:./data/inventory)"
+echo "   auth DB              http://localhost:8086/h2-console   (jdbc:h2:file:./data/auth)"
+echo "   order-processing DB  http://localhost:8088/h2-console   (jdbc:h2:file:./data/opc)"
+echo "     H2 login: user 'sa', password blank; paste the JDBC URL shown above (add ;AUTO_SERVER=TRUE)."
+echo "     All DBs now persist to ./data/ across restarts. Delete ./data/ for a clean slate."
+echo "----------------------------------------------------------------------"
+echo " Note: customer-service has NO separate UI — customer screens live in the"
+echo "       storefront (:8080). The storefront (:8080) has NO database (publish-only)."
+echo "======================================================================"
 echo "Logs in ./logs/ — stop everything with ./stop-all.sh"

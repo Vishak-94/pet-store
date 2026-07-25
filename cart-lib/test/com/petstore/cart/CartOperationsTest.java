@@ -13,6 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -96,6 +98,39 @@ class CartOperationsTest {
     }
 
     @Test
+    void count_matchesViewCount_andMakesNoCatalogCall() {
+        // A catalog client that fails on any lookup, wired to a store we populate DIRECTLY
+        // (bypassing addItem, which calls view() → catalog). Proves count() never touches
+        // the catalog: it must return the raw line count without throwing even when the
+        // catalog is completely down.
+        CatalogServiceClient failing = mock(CatalogServiceClient.class);
+        when(failing.getItem(anyString(), anyString()))
+                .thenThrow(new RuntimeException("catalog is down"));
+        try (CartStore s = new CartStore(15, 3600)) {
+            CartOperations ops = new CartOperations(s, failing);
+            s.withCart(CART, q -> {         // dangling id included — still a raw line
+                q.put("EST-1", 5);
+                q.put("EST-2", 9);
+                q.put("GHOST", 1);
+                return null;
+            });
+            assertThat(ops.count(CART)).isEqualTo(3);
+            verify(failing, never()).getItem(anyString(), anyString());
+        }
+        // And it agrees with view().count() when catalog IS reachable (raw distinct lines,
+        // including the dangling GHOST that view() drops from items()).
+        cart.addItem(CART, "EST-1", 5);
+        cart.addItem(CART, "EST-2", 9);
+        cart.addItem(CART, "GHOST", 1);
+        assertThat(cart.count(CART)).isEqualTo(cart.view(CART).count()).isEqualTo(3);
+    }
+
+    @Test
+    void count_ofUnknownCart_isZero() {
+        assertThat(cart.count("never-seen")).isZero();
+    }
+
+    @Test
     void view_skipsItemsNotInCatalog_noError() {
         cart.addItem(CART, "EST-1", null);
         cart.addItem(CART, "DOES-NOT-EXIST", 2);
@@ -153,6 +188,25 @@ class CartOperationsTest {
             assertThat(shortTtl.size()).isEqualTo(1);
             shortTtl.evictExpired();
             assertThat(shortTtl.size()).isZero();
+        }
+    }
+
+    /**
+     * A throwing sweep must NOT propagate out of the scheduled task — {@code
+     * scheduleWithFixedDelay} would otherwise permanently cancel it and TTL eviction would
+     * silently stop for the life of the JVM. {@code sweepQuietly} swallows the failure so the
+     * next tick still runs.
+     */
+    @Test
+    void sweepQuietly_swallowsFailure_soSweeperKeepsRunning() {
+        try (CartStore boom = new CartStore(15, 3600) {
+            @Override
+            void evictExpired() {
+                throw new IllegalStateException("sweep blew up");
+            }
+        }) {
+            // Would throw if the guard weren't there — and in production would cancel the task.
+            boom.sweepQuietly();   // no exception escapes
         }
     }
 }

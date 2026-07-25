@@ -5,7 +5,7 @@
 <div th:replace="~{fragments/nav :: navbar}"></div>
 <h1>Thank you — your order is placed!</h1>
 <p>Order ID: <strong th:text="${orderId}">1001</strong></p>
-<p>Total: <strong th:text="${total}">0.0</strong></p>
+<p>Total: <strong th:text="${#numbers.formatCurrency(total)}">$0.00</strong></p>
 <p><em>Your order has been submitted to the warehouse for approval &amp; fulfilment.</em></p>
 <p><a th:href="@{/}">Continue shopping</a></p>
 </body>

@@ -1,5 +1,6 @@
 package com.petstore.notification;
 
+import com.petstore.messaging.Destinations;
 import com.petstore.messaging.events.InvoiceEvent;
 import com.petstore.notification.mail.Email;
 import com.petstore.notification.mail.MailSender;
@@ -28,7 +29,13 @@ public class InvoiceNotificationListener {
         this.mailSender = mailSender;
     }
 
-    @JmsListener(destination = "InvoiceTopic", containerFactory = "topicFactory")
+    // Phase 4c: durable-subscription name, UNIQUE from OPC's InvoiceTopic subscriber ("opc-invoice").
+    // Distinct names = two independent durable subscriptions on the same topic, so notification and
+    // OPC each receive every invoice (pub/sub fan-out). Durable = an invoice sent while this service
+    // is restarting is retained by the broker and delivered on reconnect, so the "Order Shipped"
+    // email is never silently dropped.
+    @JmsListener(destination = Destinations.INVOICE_NAME, containerFactory = "topicFactory",
+            subscription = "notification-invoice")
     public void onInvoice(InvoiceEvent invoice) {
         log.info("Invoice received for order {} (shipped={}, correlationId={}) — notifying customer",
                 invoice.orderId(), invoice.shipped(), invoice.meta().correlationId());

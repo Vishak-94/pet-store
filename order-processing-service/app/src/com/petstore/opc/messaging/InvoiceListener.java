@@ -1,5 +1,6 @@
 package com.petstore.opc.messaging;
 
+import com.petstore.messaging.Destinations;
 import com.petstore.messaging.events.InvoiceEvent;
 import com.petstore.opc.domain.OrderStatus;
 import com.petstore.opc.domain.WarehouseOrder;
@@ -30,7 +31,13 @@ public class InvoiceListener {
         this.statusGateway = statusGateway;
     }
 
-    @JmsListener(destination = "InvoiceTopic", containerFactory = "topicFactory")
+    // Phase 4c: a unique durable-subscription name. The topicFactory is durable+shared, so this
+    // name (NOT a connection clientId) identifies the subscription. It must be UNIQUE per logical
+    // subscriber: notification-service also subscribes to InvoiceTopic but under a DIFFERENT name
+    // ("notification-invoice"), so each service keeps its own independent copy of every invoice
+    // (topic fan-out). Two listeners sharing ONE name would compete for messages instead.
+    @JmsListener(destination = Destinations.INVOICE_NAME, containerFactory = "topicFactory",
+            subscription = "opc-invoice")
     @Transactional
     public void onInvoice(InvoiceEvent invoice) {
         log.info("Received invoice for order {} (shipped={})", invoice.orderId(), invoice.shipped());

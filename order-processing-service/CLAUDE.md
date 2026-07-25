@@ -36,10 +36,10 @@ what is **specific to this module** — do not duplicate the shared content.
 | Package | Classes |
 |---------|---------|
 | `domain` | `WarehouseOrder`, `OrderStatus`, `ContactInfo`, `OrderLine`, `OrderStatusChange`, `SalesReport` (+`SalesBucket`), `ApprovalPolicy` |
-| `service` | `FulfilmentService` (intake+auto-approve), `AdminService` (approve/deny/batch/sales), `ApprovalGateway`, `OrderStatusGateway` |
+| `service` | `FulfilmentService` (intake+auto-approve), `AdminService` (approve/deny/batch/sales), `ApprovalGateway`, `OrderStatusGateway`, `OutboxWriter` (enqueue in-txn), `OutboxRelay` (`@Scheduled` publisher) |
 | `messaging` | `OrderListener` (PurchaseOrderQueue), `InvoiceListener` (InvoiceTopic) |
-| `repository` | `OrderStore` (port) |
-| `repository.jpa` | `JpaOrderStore` (adapter), `WarehouseOrderEntity`, `WarehouseLineEntity`, `ContactInfoEmbeddable`, `WarehouseOrderJpaRepository` (`SpringDataRepositories.java`) |
+| `repository` | `OrderStore` (port), `OutboxStore` (port), `OutboxMessage` (port DTO) |
+| `repository.jpa` | `JpaOrderStore` + `JpaOutboxStore` (adapters), `WarehouseOrderEntity`, `WarehouseLineEntity`, `ContactInfoEmbeddable`, `OutboxEntity`, `WarehouseOrderJpaRepository` + `OutboxJpaRepository` (`SpringDataRepositories.java`) |
 | `web` | `OrderProcessingApiController` |
 | `security` | `SecurityConfig` |
 
@@ -53,9 +53,14 @@ cd order-processing-service && mvn -q clean install   # installs client to ~/.m2
 ```
 
 `install` (not just `package`) because `app` depends on `order-processing-client` and admin-office-service
-depends on it too. Tests: `AdminServiceTest` (batch approval + sales delegation, Mockito) and
-`JpaOrderStoreSalesTest` (`@DataJpaTest`, real GROUP BY aggregation). Runtime store is in-memory H2
-(`schema.sql`/`data.sql`); the broker is the shared Artemis in petstore-app-v1 — use `./run-all.sh`.
+depends on it too. Tests: `AdminServiceTest` (batch approval + sales delegation, Mockito),
+`JpaOrderStoreSalesTest` (`@DataJpaTest`, real GROUP BY aggregation), and the outbox trio —
+`OutboxWriterTest` (enqueue stamps dest/type + round-trippable JSON), `OutboxRelayTest`
+(deserialize → publish → mark/retry, poison row doesn't block the batch), `JpaOutboxStoreTest`
+(`@DataJpaTest`: enqueue/drain/mark/park). Runtime store is **file-based H2**
+(`jdbc:h2:file:./data/opc`, overridable via `OPC_DB_PATH`) so orders survive restarts; schema is owned by
+**Flyway** migrations under `resources/db/migration` (`V1__init_order_schema.sql`, `V2__outbox.sql`), with `ddl-auto: none`.
+The broker is the shared Artemis in petstore-app-v1 — use `./run-all.sh`.
 
 ## Invariants — do not break
 
@@ -64,9 +69,17 @@ depends on it too. Tests: `AdminServiceTest` (batch approval + sales delegation,
 2. **`OrderStatus` = PENDING / APPROVED / DENIED / COMPLETED only.** Transitions live in
    `OrderStatus.canGoTo`: PENDING→{APPROVED,DENIED}, APPROVED→COMPLETED, DENIED/COMPLETED terminal.
    **`SHIPPED_PART` was removed on purpose (all-or-nothing fulfilment) — do NOT reintroduce it.** See DECISIONS.md.
-3. **After-commit publish.** `ApprovalGateway` and `OrderStatusGateway` register a
-   `TransactionSynchronization` and publish in `afterCommit`, so a rolled-back transaction never emits.
-   Any new outbound event MUST follow this pattern.
+3. **Transactional outbox for outbound events.** `ApprovalGateway` and `OrderStatusGateway` do
+   NOT publish to JMS directly. They append the event to the `outbox` table via `OutboxWriter`
+   **inside the business transaction**, so the event row and the order-status write commit or
+   roll back atomically — a rolled-back transaction never emits, and a committed one always
+   eventually does (closing the crash window of the old after-commit publish). `OutboxRelay`
+   (`@Scheduled`, enabled by `@EnableScheduling` on the app) polls unsent rows and publishes
+   them via the shared `MessagePublisher`. Delivery is **at-least-once** (a crash between
+   broker-send and the `published_at` stamp re-sends), which is safe because the frozen payload
+   carries a fixed `EventMeta.eventId` and consumers are idempotent (invariant #4); rows that
+   keep failing park at `opc.outbox.max-attempts`. **Any new outbound event MUST go through the
+   outbox (`OutboxWriter.enqueue`), never a direct publish or a `TransactionSynchronization`.**
 4. **Idempotent JMS consumers** (JMS is at-least-once). `OrderListener` skips an order it already has;
    `InvoiceListener` no-ops if already COMPLETED. Keep new handlers idempotent.
 5. **`ApprovalPolicy` thresholds:** auto-approve US `< 500`, JAPAN `< 50000`, else PENDING. Legacy-faithful

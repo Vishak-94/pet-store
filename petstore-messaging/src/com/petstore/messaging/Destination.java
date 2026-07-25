@@ -9,10 +9,12 @@ package com.petstore.messaging;
  */
 public record Destination(String name, boolean topic) {
 
+    /** A point-to-point queue (exactly one consumer) — use for commands. */
     public static Destination queue(String name) {
         return new Destination(name, false);
     }
 
+    /** A pub/sub topic (fan-out to every subscriber) — use for broadcast facts. */
     public static Destination topic(String name) {
         return new Destination(name, true);
     }
