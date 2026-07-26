@@ -1,6 +1,7 @@
 # ---- Build output ----
 target/
 build/
+out/
 *.class
 *.jar
 !.mvn/wrapper/maven-wrapper.jar
