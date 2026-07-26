@@ -39,6 +39,14 @@
             <artifactId>jakarta.jms-api</artifactId>
             <version>3.1.0</version>
         </dependency>
+        <!-- SLF4J facade — used only for MDC access in Correlation (the correlation-id carrier).
+             Every importing service already provides an slf4j binding (Logback via Spring Boot),
+             so this is the API only; no binding is pulled in here. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.13</version>
+        </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -54,6 +62,15 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>5.10.3</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Test-only slf4j binding so MDC is functional in CorrelationTest — Logback ships a real
+             thread-local MDC adapter (slf4j-simple's is a NOP). At runtime each importing service
+             provides Logback (via Spring Boot); the lib ships only slf4j-api, never a binding. -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.6</version>
             <scope>test</scope>
         </dependency>
         <dependency>

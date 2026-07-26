@@ -15,6 +15,7 @@ import com.petstore.opc.domain.SalesReport;
 import com.petstore.opc.domain.WarehouseOrder;
 import com.petstore.opc.repository.OrderStore;
 import com.petstore.opc.service.AdminService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -106,7 +107,7 @@ public class OrderProcessingApiController {
 
     /** Atomic batch status update (legacy updateOrders/OrderApproval). All-or-nothing. */
     @PostMapping(OrderProcessingEndpoints.ORDER_APPROVALS)
-    public ResponseEntity<OrdersByStatus> updateOrders(@RequestBody OrderApprovalDto approval) {
+    public ResponseEntity<OrdersByStatus> updateOrders(@Valid @RequestBody OrderApprovalDto approval) {
         List<OrderStatusChange> changes = approval.orders().stream()
                 .map(c -> new OrderStatusChange(c.orderId(), OrderStatus.valueOf(c.newStatus().toUpperCase())))
                 .toList();

@@ -56,8 +56,12 @@ public class JpaOutboxStore implements OutboxStore {
 
     @Override
     @Transactional
-    public void recordFailure(long id) {
+    public int recordFailure(long id) {
         jpa.incrementAttempts(id);
+        // Re-read the freshly-incremented counter so the relay can tell when this row has just
+        // reached its park threshold. clearAutomatically on the @Modifying update evicts any stale
+        // cached entity, so this findById sees the committed value.
+        return jpa.findById(id).map(e -> e.attempts).orElse(0);
     }
 
     private OutboxMessage toMessage(OutboxEntity e) {

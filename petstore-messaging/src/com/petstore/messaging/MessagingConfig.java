@@ -1,5 +1,6 @@
 package com.petstore.messaging;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.petstore.messaging.events.InvoiceEvent;
@@ -56,6 +57,12 @@ public class MessagingConfig {
         c.setTypeIdPropertyName(TYPE_ID_PROPERTY);
         c.setTypeIdMappings(TYPE_IDS);
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        // Forward schema-evolution safety: ignore unknown JSON properties on inbound. Event fields
+        // are additive (invariant #3), but during a rolling deploy a NEWER producer can emit a field
+        // an OLDER consumer doesn't know yet. Jackson's default would throw UnrecognizedProperty →
+        // the message never deserializes → 3 redeliveries → DLQ. Ignoring unknowns makes the
+        // "additive fields are safe across an in-flight deploy" guarantee hold in BOTH directions.
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         c.setObjectMapper(mapper);
         return c;
     }

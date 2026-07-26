@@ -39,8 +39,24 @@ public class CartOperations {
      */
     private static final String LOCALE = "en_US";
 
+    /**
+     * Upper bound on the per-line quantity. The cart is the real invariant boundary (the storefront
+     * controller is only one caller), so the cap is enforced HERE: a request for more than this is
+     * clamped to the cap rather than rejected, so the stepper's JSON reply simply reflects the
+     * capped value (no 400 to handle in the in-page UI). Bounds a single line so it can't overflow
+     * the order total or be used to wedge downstream sizing; 999 is well above any real pet order.
+     * The {@code qty <= 0} removes-the-line behaviour (legacy) is unchanged — only the top is capped.
+     */
+    static final int MAX_QUANTITY = 999;
+
     private final CartStore store;
     private final CatalogServiceClient catalog;
+
+    /** Clamp a positive quantity to {@link #MAX_QUANTITY}; values &lt;= 0 pass through unchanged
+     *  so callers keep their existing "remove the line" semantics. */
+    private static int capQuantity(int qty) {
+        return Math.min(qty, MAX_QUANTITY);
+    }
 
     public CartOperations(CartStore store, CatalogServiceClient catalog) {
         this.store = store;
@@ -48,16 +64,17 @@ public class CartOperations {
     }
 
     public CartView addItem(String cartId, String itemId, Integer qty) {
-        store.withCart(cartId, q -> q.put(itemId, qty == null ? 1 : qty));
+        store.withCart(cartId, q -> q.put(itemId, qty == null ? 1 : capQuantity(qty)));
         return view(cartId);
     }
 
-    /** Sets absolute quantity; qty &lt;= 0 removes the line (legacy behaviour). */
+    /** Sets absolute quantity; qty &lt;= 0 removes the line (legacy behaviour); a positive
+     *  qty is capped at {@link #MAX_QUANTITY}. */
     public CartView setQuantity(String cartId, String itemId, int qty) {
         store.withCart(cartId, q -> {
             q.remove(itemId);
             if (qty > 0) {
-                q.put(itemId, qty);
+                q.put(itemId, capQuantity(qty));
             }
             return null;
         });

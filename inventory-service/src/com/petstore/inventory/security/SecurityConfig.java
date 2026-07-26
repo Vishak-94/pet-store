@@ -13,6 +13,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 /**
@@ -61,7 +62,18 @@ public class SecurityConfig {
         // and the frame-options relaxation it needs is not applied.
         boolean devConsole = env.acceptsProfiles(Profiles.of("dev"));
         http
-            .csrf(csrf -> csrf.disable())
+            // CSRF enabled for the cookie-authed UI forms (login/logout, restock) so a cross-site
+            // page can't drive a restock on the logged-in supplier's behalf. The stateless JSON
+            // /api/** surface is Bearer-authed (no ambient cookie to ride) and exempt; the dev-only
+            // H2 console is exempt too (it posts its own forms and only runs under the dev profile).
+            // Sessions are STATELESS so CookieCsrfTokenRepository is the stateless synchronizer store.
+            .csrf(csrf -> {
+                csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                    .ignoringRequestMatchers(API_PREFIX + "**");
+                if (devConsole) {
+                    csrf.ignoringRequestMatchers(new AntPathRequestMatcher("/h2-console/**"));
+                }
+            })
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> {
                 auth.requestMatchers(PUBLIC_MATCHERS).permitAll();

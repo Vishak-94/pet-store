@@ -1,6 +1,7 @@
 package com.petstore.opc.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.petstore.messaging.Destination;
@@ -36,7 +37,8 @@ public class OutboxWriter {
             .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
 
     /** Matches MessagingConfig's converter mapper so the stored JSON is wire-identical. */
-    private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule())
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private final OutboxStore outbox;
 

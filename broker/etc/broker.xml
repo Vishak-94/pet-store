@@ -232,7 +232,8 @@ under the License.
                 - redelivery-delay .............. first retry waits 1s
                 - redelivery-delay-multiplier ... each further retry waits 2x the previous
                 - max-redelivery-delay .......... but never more than 30s between retries
-                - max-delivery-attempts ......... after 6 tries, route the message to <dead-letter-address>
+                - max-delivery-attempts ......... after 3 tries (initial + 2 retries at ~1s, ~2s),
+                                                  route the message to <dead-letter-address>
               This is the broker-side safety net that complements the producer-side outbox: the
               outbox guarantees an approved order's event is *emitted*; this guarantees a message a
               consumer keeps rejecting is *quarantined* (DLQ) instead of blocking the queue forever.
@@ -244,7 +245,7 @@ under the License.
             <redelivery-delay>1000</redelivery-delay>
             <redelivery-delay-multiplier>2.0</redelivery-delay-multiplier>
             <max-redelivery-delay>30000</max-redelivery-delay>
-            <max-delivery-attempts>6</max-delivery-attempts>
+            <max-delivery-attempts>3</max-delivery-attempts>
             <auto-create-queues>true</auto-create-queues>
             <auto-create-addresses>true</auto-create-addresses>
          </address-setting>
@@ -254,7 +255,7 @@ under the License.
             <redelivery-delay>1000</redelivery-delay>
             <redelivery-delay-multiplier>2.0</redelivery-delay-multiplier>
             <max-redelivery-delay>30000</max-redelivery-delay>
-            <max-delivery-attempts>6</max-delivery-attempts>
+            <max-delivery-attempts>3</max-delivery-attempts>
             <auto-create-queues>true</auto-create-queues>
             <auto-create-addresses>true</auto-create-addresses>
          </address-setting>
@@ -264,7 +265,7 @@ under the License.
             <redelivery-delay>1000</redelivery-delay>
             <redelivery-delay-multiplier>2.0</redelivery-delay-multiplier>
             <max-redelivery-delay>30000</max-redelivery-delay>
-            <max-delivery-attempts>6</max-delivery-attempts>
+            <max-delivery-attempts>3</max-delivery-attempts>
             <auto-create-queues>true</auto-create-queues>
             <auto-create-addresses>true</auto-create-addresses>
          </address-setting>
@@ -274,7 +275,7 @@ under the License.
             <redelivery-delay>1000</redelivery-delay>
             <redelivery-delay-multiplier>2.0</redelivery-delay-multiplier>
             <max-redelivery-delay>30000</max-redelivery-delay>
-            <max-delivery-attempts>6</max-delivery-attempts>
+            <max-delivery-attempts>3</max-delivery-attempts>
             <auto-create-queues>true</auto-create-queues>
             <auto-create-addresses>true</auto-create-addresses>
          </address-setting>

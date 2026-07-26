@@ -1,6 +1,8 @@
 package com.petstore.order.web;
 
 import com.petstore.messaging.events.PurchaseOrderEvent;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Size;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,16 +20,19 @@ import java.util.List;
  */
 public class ContactInfoForm {
 
-    private String familyName;
-    private String givenName;
-    private String streetName1;
-    private String streetName2;
-    private String city;
-    private String state;
-    private String zipCode;
-    private String country;
-    private String telephone;
-    private String email;
+    // Size caps bound each field defensively (abuse / oversized input). The REQUIRED-field logic
+    // stays in missingRequiredFields/requireValid (H7) — these constraints only add upper bounds and
+    // an email-format check; a blank optional still normalises to null in toContactInfo().
+    @Size(max = 60) private String familyName;
+    @Size(max = 60) private String givenName;
+    @Size(max = 120) private String streetName1;
+    @Size(max = 120) private String streetName2;
+    @Size(max = 60) private String city;
+    @Size(max = 60) private String state;
+    @Size(max = 12) private String zipCode;
+    @Size(max = 60) private String country;
+    @Size(max = 30) private String telephone;
+    @Email @Size(max = 120) private String email;
 
     private static boolean blank(String s) {
         return s == null || s.trim().isEmpty();

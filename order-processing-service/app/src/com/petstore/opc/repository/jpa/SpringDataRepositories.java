@@ -70,8 +70,12 @@ interface OutboxJpaRepository extends JpaRepository<OutboxEntity, Long> {
     @Query("UPDATE OutboxEntity o SET o.publishedAt = :publishedAt WHERE o.id = :id")
     void markPublished(@Param("id") long id, @Param("publishedAt") Instant publishedAt);
 
-    /** Increment the attempt counter for a row whose publish failed. */
-    @Modifying
+    /**
+     * Increment the attempt counter for a row whose publish failed. {@code clearAutomatically}
+     * evicts the persistence context so a following {@code findById} (the relay reads back the
+     * new count to detect the park threshold) sees the updated value, not a stale cached entity.
+     */
+    @Modifying(clearAutomatically = true)
     @Query("UPDATE OutboxEntity o SET o.attempts = o.attempts + 1 WHERE o.id = :id")
     void incrementAttempts(@Param("id") long id);
 }

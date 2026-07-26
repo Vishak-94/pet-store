@@ -31,7 +31,8 @@ opc:
   outbox:
     poll-ms: 1000          # relay poll interval (fixedDelay between drains)
     batch-size: 100        # max unpublished rows drained per poll
-    max-attempts: 10       # publish attempts before a row is parked as a poison message
+    max-attempts: 3        # publish attempts before a row is parked as a poison message
+                           # (aligned with the broker's max-delivery-attempts=3 → DLQ policy)
 
 server:
   port: 8088

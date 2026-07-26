@@ -13,6 +13,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 /**
  * Verify-only security for the admin service. Tokens are minted by auth-service
@@ -67,7 +68,15 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtVerifier verifier) throws Exception {
         http
-            .csrf(csrf -> csrf.disable())
+            // CSRF is enabled for the cookie-authed UI forms (login/logout, approve/deny) so a
+            // cross-site page can't drive an admin action on the logged-in staffer's behalf. The
+            // stateless JSON /api/** surface is exempt: it is Bearer-token authed (no ambient cookie
+            // to ride), so it isn't CSRF-exposed and its programmatic callers can't fetch a token.
+            // Sessions are STATELESS, so the token can't live server-side — CookieCsrfTokenRepository
+            // (readable by Thymeleaf via the request attribute) is the stateless synchronizer store.
+            .csrf(csrf -> csrf
+                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                .ignoringRequestMatchers(API_PREFIX + "**"))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC_MATCHERS).permitAll()

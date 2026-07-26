@@ -1,7 +1,12 @@
 package com.petstore.order.web;
 
+import com.petstore.order.security.OrderKeyCipher;
 import com.petstore.order.service.EmptyCartException;
+import com.petstore.order.service.IdempotencyKeyStore;
 import com.petstore.order.service.OrderService;
+import com.petstore.security.AuthenticatedUser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -19,6 +24,8 @@ import java.util.Map;
 @RestController
 public class CheckoutController {
 
+    private static final Logger log = LoggerFactory.getLogger(CheckoutController.class);
+
     /** Fallback email domain for the API path (no customer profile lookup here). */
     private static final String FALLBACK_EMAIL_DOMAIN = "@petstore.com";
 
@@ -29,19 +36,30 @@ public class CheckoutController {
     private static final String KEY_ERROR = "error";
     private static final String NOTE_SUBMITTED = "submitted to order-processing-service for fulfilment";
     private static final String ERROR_CART_EMPTY = "cart_empty";
+    /** Returned when the pre-checkout {@code orderKey} is missing / invalid / already consumed. */
+    private static final String ERROR_INVALID_ORDER_KEY = "invalid_order_key";
 
     private final OrderService orderService;
+    private final IdempotencyKeyStore keyStore;
+    private final OrderKeyCipher orderKeyCipher;
 
-    public CheckoutController(OrderService orderService) {
+    public CheckoutController(OrderService orderService, IdempotencyKeyStore keyStore,
+                              OrderKeyCipher orderKeyCipher) {
         this.orderService = orderService;
+        this.keyStore = keyStore;
+        this.orderKeyCipher = orderKeyCipher;
     }
 
     /**
      * Place an order via the JSON API. Identity is taken from the verified session token (never
-     * from request params — see the body comment), ship-to and bill-to are validated (legacy H7
-     * required-field set), then {@link OrderService#checkout} publishes the PurchaseOrderEvent and
-     * empties the cart. Returns 200 {@code {orderId, total, note}} on success, or 400
-     * {@code {error:"cart_empty"}} when the cart is empty.
+     * from request params — see the body comment). Like the HTML {@code POST /checkout}, this
+     * requires the encrypted {@code orderKey} synchronizer token minted by {@code POST /pre-checkout}
+     * and consumes it exactly once, so a stateless JSON caller can't be cross-site-driven or replayed
+     * into placing duplicate orders (the HTML path already had this; parity gap E3). Then ship-to and
+     * bill-to are validated (legacy H7 required-field set) and {@link OrderService#checkout} publishes
+     * the PurchaseOrderEvent under the reserved order id and empties the cart. Returns 200
+     * {@code {orderId, total, note}} on success; 400 {@code {error:"invalid_order_key"}} when the key is
+     * missing/replayed; 400 {@code {error:"cart_empty"}} when the cart is empty.
      */
     @PostMapping("/api/checkout")
     public ResponseEntity<Map<String, Object>> checkout(Authentication auth,
@@ -52,11 +70,23 @@ public class CheckoutController {
         // subject, the stable customer userId is on getDetails(). This endpoint is already in
         // the authenticated() matcher, so auth is non-null here.
         String userId = auth.getName();
+        String customerId = AuthenticatedUser.userId(auth);
         String email = userId + FALLBACK_EMAIL_DOMAIN;
+
+        // Require + consume the pre-checkout reservation exactly once (same flow as the HTML path):
+        // decrypt the hidden token to the server-minted order id and atomically match/consume it.
+        // A missing / forged / already-consumed key is rejected before anything is published.
+        String orderId = orderKeyCipher.decrypt(form.getOrderKey()).orElse(null);
+        if (orderId == null || !keyStore.consumeIfMatches(customerId, orderId)) {
+            log.info("Invalid/duplicate /api/checkout submit for customer {} — not publishing", customerId);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of(KEY_ERROR, ERROR_INVALID_ORDER_KEY));
+        }
+
         try {
             // Legacy OrderHTMLAction validated both ship-to and bill-to before ordering.
             ContactInfoForm.requireValid(form.getShipTo(), form.getBillTo());
-            OrderService.OrderPlaced placed = orderService.checkout(userId, email,
+            OrderService.OrderPlaced placed = orderService.checkout(orderId, userId, email,
                     form.getShipTo().toContactInfo(), form.getBillTo().toContactInfo());
             return ResponseEntity.ok(Map.of(
                     KEY_ORDER_ID, placed.orderId(),

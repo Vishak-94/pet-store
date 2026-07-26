@@ -10,11 +10,13 @@ import com.petstore.order.web.CheckoutForm;
 import com.petstore.order.web.ContactInfoForm;
 import com.petstore.order.web.MissingFormDataException;
 import com.petstore.security.AuthenticatedUser;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 
@@ -57,6 +59,10 @@ public class StorefrontController {
     private static final String MSG_DUPLICATE_SUBMIT =
             "This order was already submitted. Please review your cart before ordering again.";
     private static final String MSG_CART_EMPTY = "Your cart is empty.";
+    private static final String MSG_INVALID_INPUT =
+            "Some address fields are too long or malformed. Please correct them and try again.";
+    private static final String MSG_PRICES_UNAVAILABLE =
+            "Item prices are temporarily unavailable. Please try again shortly.";
 
     private final CustomerServiceClient customerClient;
     private final CartService cart;
@@ -84,12 +90,25 @@ public class StorefrontController {
 
     /** Populates the checkout view model (summary + saved address). Shared by the GET page and
      *  the POST re-render on a validation error. The idempotency token is fetched by the page's
-     *  JS from {@code POST /pre-checkout} and placed in the hidden {@code orderKey} field. */
+     *  JS from {@code POST /pre-checkout} and placed in the hidden {@code orderKey} field.
+     *
+     *  <p>Resolving the cart lines + subtotal fans out to catalog-service for prices, so a catalog
+     *  outage would otherwise 500 the whole checkout page. Mirroring the safe-swallow in
+     *  {@link GlobalModelAdvice#cartCount}, a failure here degrades to an empty summary + a
+     *  "prices temporarily unavailable" notice instead of a hard error — the shopper still sees the
+     *  page. (The order-complete path recomputes the total server-side at publish time.) */
     private String checkoutModel(Authentication auth, Model model) {
         model.addAttribute(ATTR_USER_ID, auth.getName());
         model.addAttribute(ATTR_CUSTOMER, fetchCustomer(auth).orElse(null));
-        model.addAttribute(ATTR_ITEMS, cart.getItems());
-        model.addAttribute(ATTR_SUBTOTAL, cart.getSubTotal());
+        try {
+            model.addAttribute(ATTR_ITEMS, cart.getItems());
+            model.addAttribute(ATTR_SUBTOTAL, cart.getSubTotal());
+        } catch (RuntimeException e) {
+            log.warn("checkout summary unavailable (catalog outage?), degrading gracefully: {}", e.getMessage());
+            model.addAttribute(ATTR_ITEMS, java.util.List.of());
+            model.addAttribute(ATTR_SUBTOTAL, 0.0);
+            model.addAttribute(ATTR_ERROR, MSG_PRICES_UNAVAILABLE);
+        }
         return VIEW_CHECKOUT;
     }
 
@@ -103,9 +122,17 @@ public class StorefrontController {
      */
     @PostMapping("/checkout")
     public String placeOrder(Authentication auth,
-                             @org.springframework.web.bind.annotation.ModelAttribute CheckoutForm form,
+                             @Valid @org.springframework.web.bind.annotation.ModelAttribute CheckoutForm form,
+                             BindingResult binding,
                              Model model) {
         String userId = auth.getName();
+        // Bean-validation (field size caps / email format) runs before anything else so a malformed
+        // submit re-renders the page WITHOUT consuming the idempotency reservation — the shopper can
+        // fix the field and retry with the same token. The H7 required-field check stays below.
+        if (binding.hasErrors()) {
+            model.addAttribute(ATTR_ERROR, MSG_INVALID_INPUT);
+            return checkoutModel(auth, model);
+        }
         // Reservation is keyed by the stable customer userId (same key /pre-checkout used).
         String customerId = AuthenticatedUser.userId(auth);
         String email = fetchCustomer(auth)

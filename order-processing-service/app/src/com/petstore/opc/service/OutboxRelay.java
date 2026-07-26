@@ -1,5 +1,6 @@
 package com.petstore.opc.service;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.petstore.messaging.Destination;
@@ -35,7 +36,8 @@ public class OutboxRelay {
     private static final Logger log = LoggerFactory.getLogger(OutboxRelay.class);
 
     /** Matches MessagingConfig's converter mapper so stored JSON round-trips identically. */
-    private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule())
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private final OutboxStore outbox;
     private final MessagePublisher publisher;
@@ -70,9 +72,19 @@ public class OutboxRelay {
             outbox.markPublished(message.id());
             log.debug("Outbox {} published {} to {}", message.id(), message.eventType(), message.destination());
         } catch (Exception e) {
-            outbox.recordFailure(message.id());
-            log.warn("Outbox {} publish failed for {} → {} (will retry unless parked at {} attempts): {}",
-                    message.id(), message.eventType(), message.destination(), maxAttempts, e.toString());
+            int attempts = outbox.recordFailure(message.id());
+            if (attempts >= maxAttempts) {
+                // Parked: this row has exhausted its retries and fetchUnpublished will now skip it.
+                // Log at ERROR (once, on the poll that trips the threshold) so a permanently-failing
+                // producer-side event is operator-visible — the outbox has no DLQ, this WARN/ERROR is
+                // its equivalent of the broker-side dead-letter signal (see DlqListener for the broker side).
+                log.error("Outbox {} PARKED after {} failed attempts — {} → {} will NOT be retried; "
+                                + "row left in table for inspection. Last error: {}",
+                        message.id(), attempts, message.eventType(), message.destination(), e.toString());
+            } else {
+                log.warn("Outbox {} publish failed for {} → {} (attempt {}/{}, will retry): {}",
+                        message.id(), message.eventType(), message.destination(), attempts, maxAttempts, e.toString());
+            }
         }
     }
 

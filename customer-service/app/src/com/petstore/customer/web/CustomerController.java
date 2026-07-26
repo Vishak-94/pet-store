@@ -72,7 +72,7 @@ public class CustomerController {
 
     /** Replace the account/contact slice (owner or ADMIN); profile + card preserved. Returns refreshed view. */
     @PutMapping(CustomerServiceEndpoints.ACCOUNT)
-    public CustomerDtos.CustomerView updateAccount(@PathVariable String id, @RequestBody CustomerDtos.AccountDto dto,
+    public CustomerDtos.CustomerView updateAccount(@PathVariable String id, @Valid @RequestBody CustomerDtos.AccountDto dto,
                                                    Authentication auth) {
         requireOwnerOrAdmin(id, auth);
         return toView(customers.updateAccount(id, toAccount(dto)));
@@ -80,7 +80,7 @@ public class CustomerController {
 
     /** Replace the profile-preferences slice (owner or ADMIN); account + card preserved. Returns refreshed view. */
     @PutMapping(CustomerServiceEndpoints.PROFILE)
-    public CustomerDtos.CustomerView updateProfile(@PathVariable String id, @RequestBody CustomerDtos.ProfileDto dto,
+    public CustomerDtos.CustomerView updateProfile(@PathVariable String id, @Valid @RequestBody CustomerDtos.ProfileDto dto,
                                                    Authentication auth) {
         requireOwnerOrAdmin(id, auth);
         Profile p = new Profile(dto.preferredLanguage(), dto.favoriteCategory(),
@@ -90,7 +90,7 @@ public class CustomerController {
 
     /** Replace the credit-card slice (owner or ADMIN); account + profile preserved. Card masked in the returned view. */
     @PutMapping(CustomerServiceEndpoints.CARD)
-    public CustomerDtos.CustomerView updateCard(@PathVariable String id, @RequestBody CustomerDtos.CardDto dto,
+    public CustomerDtos.CustomerView updateCard(@PathVariable String id, @Valid @RequestBody CustomerDtos.CardDto dto,
                                                 Authentication auth) {
         requireOwnerOrAdmin(id, auth);
         return toView(customers.updateCreditCard(id, toCard(dto)));

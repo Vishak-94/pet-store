@@ -1,5 +1,6 @@
 package com.petstore.opc.messaging;
 
+import com.petstore.messaging.Correlation;
 import com.petstore.messaging.Destinations;
 import com.petstore.messaging.events.InvoiceEvent;
 import com.petstore.opc.domain.OrderStatus;
@@ -40,22 +41,29 @@ public class InvoiceListener {
             subscription = "opc-invoice")
     @Transactional
     public void onInvoice(InvoiceEvent invoice) {
-        log.info("Received invoice for order {} (shipped={})", invoice.orderId(), invoice.shipped());
-        OrderStatus status = orders.statusOf(invoice.orderId()).orElse(null);
-        if (status == null) {
-            log.warn("Invoice for unknown order {} — ignoring", invoice.orderId());
-            return;
-        }
-        if (status == OrderStatus.COMPLETED) {
-            return;   // idempotent
-        }
-        if (invoice.shipped() && status.canGoTo(OrderStatus.COMPLETED)) {
-            orders.updateStatus(invoice.orderId(), OrderStatus.COMPLETED);
-            log.info("Order {} → COMPLETED (invoice shipped)", invoice.orderId());
-            orders.findById(invoice.orderId()).ifPresent(order ->
-                    statusGateway.announce(order, OrderStatus.COMPLETED));   // → customer "Order COMPLETED" email (legacy MailCompletedOrderMDB)
-        } else if (!invoice.shipped()) {
-            log.info("Order {} backordered by inventory — staying {}", invoice.orderId(), status);
+        // Carry the invoice's correlation id so the COMPLETED status event we may re-publish (and
+        // the logs below) stay on the original checkout's trace.
+        Correlation.set(invoice.meta() == null ? null : invoice.meta().correlationId());
+        try {
+            log.info("Received invoice for order {} (shipped={})", invoice.orderId(), invoice.shipped());
+            OrderStatus status = orders.statusOf(invoice.orderId()).orElse(null);
+            if (status == null) {
+                log.warn("Invoice for unknown order {} — ignoring", invoice.orderId());
+                return;
+            }
+            if (status == OrderStatus.COMPLETED) {
+                return;   // idempotent
+            }
+            if (invoice.shipped() && status.canGoTo(OrderStatus.COMPLETED)) {
+                orders.updateStatus(invoice.orderId(), OrderStatus.COMPLETED);
+                log.info("Order {} → COMPLETED (invoice shipped)", invoice.orderId());
+                orders.findById(invoice.orderId()).ifPresent(order ->
+                        statusGateway.announce(order, OrderStatus.COMPLETED));   // → customer "Order COMPLETED" email (legacy MailCompletedOrderMDB)
+            } else if (!invoice.shipped()) {
+                log.info("Order {} backordered by inventory — staying {}", invoice.orderId(), status);
+            }
+        } finally {
+            Correlation.clear();
         }
     }
 }

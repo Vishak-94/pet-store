@@ -40,9 +40,12 @@ Read the repo skill `.claude/skills/petstore-dev/SKILL.md` first for the fleet-w
 | `web.InventoryLoginController` | `@Controller` | `/inventory/login`, `/inventory/logout` — delegate to auth-service, set `jwt` cookie |
 | `security.SecurityConfig` | `@Configuration` | Verify-only RS256 (public key), role matchers, stateless |
 
-`resources/`: `application.yml` (port 8085, H2 `inventory` in-mem, shared Artemis
-`tcp://localhost:61616`), `schema.sql` (`inventory` table + non-negative CHECK), `data.sql`
-(seed; `EST-2` seeded at qty 1 to exercise oversell), `templates/` (`inventory.html`, `login.html`).
+`resources/`: `application.yml` (port 8085, **file-based** H2 `jdbc:h2:file:./data/inventory`
+overridable via `INVENTORY_DB_PATH` — stock levels + the dedup ledger survive restarts;
+shared Artemis `tcp://localhost:61616`), `schema.sql` (idempotent `CREATE TABLE IF NOT EXISTS`
+for the `inventory` table + non-negative CHECK **and** the `processed_event` dedup ledger),
+`data.sql` (idempotent `MERGE` seed so re-boot on a populated file DB is safe; `EST-2` seeded
+at qty 1 to exercise oversell), `templates/` (`inventory.html`, `login.html`).
 
 ## Events
 

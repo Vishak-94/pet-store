@@ -1,5 +1,9 @@
 package com.petstore.opc.client;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+
 import java.time.Instant;
 import java.util.List;
 
@@ -38,11 +42,16 @@ public final class OrderDtos {
     }
 
     /** One requested status change in a batch approval (legacy {@code ChangedOrder}). */
-    public record OrderStatusChangeDto(String orderId, String newStatus) {
+    public record OrderStatusChangeDto(@NotBlank String orderId, @NotBlank String newStatus) {
     }
 
-    /** A batch of status changes applied atomically (legacy {@code OrderApproval}). */
-    public record OrderApprovalDto(List<OrderStatusChangeDto> orders) {
+    /**
+     * A batch of status changes applied atomically (legacy {@code OrderApproval}). At least one
+     * change is required, and each is itself validated ({@code @Valid} cascades into the list) so
+     * an empty batch or a blank orderId/newStatus is rejected as 400 rather than reaching the
+     * service layer or {@code OrderStatus.valueOf} on a null.
+     */
+    public record OrderApprovalDto(@NotEmpty @Valid List<OrderStatusChangeDto> orders) {
     }
 
     /** One aggregation bucket of a sales report, keyed by category or item id. */

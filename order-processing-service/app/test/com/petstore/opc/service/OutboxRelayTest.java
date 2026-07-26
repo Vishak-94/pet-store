@@ -82,7 +82,24 @@ class OutboxRelayTest {
     @Test
     void publishFailure_recordsFailure_doesNotMarkPublished() {
         when(outbox.fetchUnpublished(anyInt(), anyInt())).thenReturn(List.of(approvedRow()));
+        when(outbox.recordFailure(1L)).thenReturn(1);   // 1st failure, still under the cap
         doThrow(new RuntimeException("broker down")).when(publisher).publish(any(), any());
+
+        relay.publishPending();
+
+        verify(outbox).recordFailure(1L);
+        verify(outbox, never()).markPublished(anyInt());
+    }
+
+    @Test
+    void publishFailureAtThreshold_parksRow_stillRecordsFailure() {
+        // maxAttempts = 3 (the configured park threshold). When recordFailure reports the row has
+        // reached it, the relay parks it (logs ERROR) — but the visible contract is still: failure
+        // recorded, never marked published. fetchUnpublished will now skip it on later polls.
+        OutboxRelay relay = new OutboxRelay(outbox, publisher, 100, 3);
+        when(outbox.fetchUnpublished(anyInt(), anyInt())).thenReturn(List.of(approvedRow()));
+        when(outbox.recordFailure(1L)).thenReturn(3);   // hit the cap on this attempt
+        doThrow(new RuntimeException("still down")).when(publisher).publish(any(), any());
 
         relay.publishPending();
 

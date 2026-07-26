@@ -30,7 +30,10 @@ src/com/petstore/messaging/
   Destinations.java       the ONE registry of names: PURCHASE_ORDER, APPROVED_ORDER (queues),
                           INVOICE, ORDER_STATUS (topics)
   EventMeta.java          envelope record: eventId, type, occurredAt, correlationId
-  Events.java             EventMeta factory: meta(type, correlationId) / meta(type)
+  Events.java             EventMeta factory: meta(type, correlationId) / meta(type) — the
+                          one-arg form pulls the correlation id from the ambient Correlation MDC
+  Correlation.java        MDC-backed correlation-id carrier (current/set/clear); the HTTP↔JMS
+                          bridge so one checkout traces end-to-end across services (key "correlationId")
   MessagingConfig.java    @Configuration @EnableJms — TYPE_IDS map, jacksonJmsMessageConverter,
                           queueFactory (pubSub=false), topicFactory (pubSub=true,
                           JMS 2.0 durable+shared — each topic @JmsListener needs a unique `subscription` name)

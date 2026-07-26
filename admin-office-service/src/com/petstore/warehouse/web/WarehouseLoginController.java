@@ -2,14 +2,17 @@ package com.petstore.warehouse.web;
 
 import com.petstore.auth.client.AuthClient;
 import com.petstore.auth.client.AuthJwtFilter;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -30,11 +33,22 @@ public class WarehouseLoginController {
     /** Model attribute + message shown when credentials are rejected. */
     private static final String ATTR_ERROR = "error";
     private static final String MSG_INVALID_CREDENTIALS = "Invalid credentials";
+    /** SameSite policy on the jwt cookie — Strict blocks the cross-site send that enabled CSRF. */
+    private static final String SAME_SITE_STRICT = "Strict";
 
     private final AuthClient auth;
 
-    public WarehouseLoginController(AuthClient auth) {
+    /**
+     * Whether to mark the jwt cookie {@code Secure} (HTTPS-only). Config-gated and default
+     * {@code false} so login works over plain HTTP in the local demo; set {@code cookie.secure=true}
+     * in a real HTTPS deployment. {@code SameSite=Strict} already blocks the cross-site send.
+     */
+    private final boolean cookieSecure;
+
+    public WarehouseLoginController(AuthClient auth,
+                                    @Value("${cookie.secure:false}") boolean cookieSecure) {
         this.auth = auth;
+        this.cookieSecure = cookieSecure;
     }
 
     @GetMapping("/")
@@ -56,19 +70,29 @@ public class WarehouseLoginController {
             return VIEW_LOGIN;
         }
         // Drop the RS256 token in the same 'jwt' cookie the verify-only AuthJwtFilter reads.
-        Cookie c = new Cookie(AuthJwtFilter.JWT_COOKIE, result.get().token());
-        c.setPath(COOKIE_PATH);
-        c.setHttpOnly(true);
-        response.addCookie(c);
+        // ResponseCookie so we can set SameSite=Strict (HttpOnly-cookie CSRF hardening) — the
+        // servlet Cookie API has no SameSite setter. Secure is config-gated (false for local HTTP).
+        response.addHeader(HttpHeaders.SET_COOKIE, jwtCookie(result.get().token(), null).toString());
         return REDIRECT_ORDERS;
     }
 
     @PostMapping("/warehouse/logout")
     public String logout(HttpServletResponse response) {
-        Cookie c = new Cookie(AuthJwtFilter.JWT_COOKIE, "");
-        c.setPath(COOKIE_PATH);
-        c.setMaxAge(0);   // expire immediately
-        response.addCookie(c);
+        // Same attributes as the login cookie (so the browser matches + replaces it) but zero max-age.
+        response.addHeader(HttpHeaders.SET_COOKIE, jwtCookie("", Duration.ZERO).toString());
         return REDIRECT_LOGGED_OUT;
+    }
+
+    /** Build the jwt cookie with consistent hardening flags; {@code maxAge} null = session cookie. */
+    private ResponseCookie jwtCookie(String value, Duration maxAge) {
+        ResponseCookie.ResponseCookieBuilder b = ResponseCookie.from(AuthJwtFilter.JWT_COOKIE, value)
+                .path(COOKIE_PATH)
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .sameSite(SAME_SITE_STRICT);
+        if (maxAge != null) {
+            b.maxAge(maxAge);
+        }
+        return b.build();
     }
 }

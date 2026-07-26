@@ -1,5 +1,6 @@
 package com.petstore.opc.messaging;
 
+import com.petstore.messaging.Correlation;
 import com.petstore.messaging.Destinations;
 import com.petstore.messaging.events.PurchaseOrderEvent;
 import com.petstore.opc.domain.ContactInfo;
@@ -35,23 +36,31 @@ public class OrderListener {
 
     @JmsListener(destination = Destinations.PURCHASE_ORDER_NAME, containerFactory = "queueFactory")
     public void onOrder(PurchaseOrderEvent msg) {
-        log.info("Received order {} from {} ({} lines)", msg.orderId(),
-                Destinations.PURCHASE_ORDER.name(), msg.lines() == null ? 0 : msg.lines().size());
-        List<OrderLine> lines = (msg.lines() == null ? List.<PurchaseOrderEvent.Line>of() : msg.lines())
-                .stream()
-                .map(l -> new OrderLine(l.itemId(), l.productId(), l.categoryId(), l.quantity(), l.unitPrice()))
-                .toList();
+        // Adopt the inbound event's correlation id for this handling so any downstream event
+        // (approval/status published while processing) and every log line stay on the checkout's
+        // trace — the JMS analogue of the HTTP CorrelationIdFilter.
+        Correlation.set(msg.meta() == null ? null : msg.meta().correlationId());
         try {
-            fulfilment.receiveOrder(new WarehouseOrder(
-                    msg.orderId(), msg.userId(), msg.emailId(), msg.locale(),
-                    msg.totalPrice(), OrderStatus.PENDING, lines,
-                    toDomain(msg.shipTo()), toDomain(msg.billTo()), occurredAt(msg)));
-        } catch (DataIntegrityViolationException dup) {
-            // Idempotency backstop (Option 3): the order_id primary key rejected a duplicate
-            // that raced past the findById guard (two redeliveries interleaving, or a client
-            // replay the storefront token-set didn't catch). Swallow + ack — the order is
-            // already stored, so this delivery is a no-op, not a poison message to redeliver.
-            log.info("Order {} already persisted (primary-key dedup); ignoring duplicate delivery", msg.orderId());
+            log.info("Received order {} from {} ({} lines)", msg.orderId(),
+                    Destinations.PURCHASE_ORDER.name(), msg.lines() == null ? 0 : msg.lines().size());
+            List<OrderLine> lines = (msg.lines() == null ? List.<PurchaseOrderEvent.Line>of() : msg.lines())
+                    .stream()
+                    .map(l -> new OrderLine(l.itemId(), l.productId(), l.categoryId(), l.quantity(), l.unitPrice()))
+                    .toList();
+            try {
+                fulfilment.receiveOrder(new WarehouseOrder(
+                        msg.orderId(), msg.userId(), msg.emailId(), msg.locale(),
+                        msg.totalPrice(), OrderStatus.PENDING, lines,
+                        toDomain(msg.shipTo()), toDomain(msg.billTo()), occurredAt(msg)));
+            } catch (DataIntegrityViolationException dup) {
+                // Idempotency backstop (Option 3): the order_id primary key rejected a duplicate
+                // that raced past the findById guard (two redeliveries interleaving, or a client
+                // replay the storefront token-set didn't catch). Swallow + ack — the order is
+                // already stored, so this delivery is a no-op, not a poison message to redeliver.
+                log.info("Order {} already persisted (primary-key dedup); ignoring duplicate delivery", msg.orderId());
+            }
+        } finally {
+            Correlation.clear();   // never leak the id across pooled listener threads
         }
     }
 

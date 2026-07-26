@@ -91,6 +91,28 @@ class CartOperationsTest {
     }
 
     @Test
+    void setQuantity_aboveCap_isClampedToMax() {
+        cart.addItem(CART, "EST-1", 1);
+        cart.setQuantity(CART, "EST-1", CartOperations.MAX_QUANTITY + 500);
+        assertThat(cart.view(CART).items()).singleElement()
+                .satisfies(ci -> assertThat(ci.quantity()).isEqualTo(CartOperations.MAX_QUANTITY));
+    }
+
+    @Test
+    void addItem_aboveCap_isClampedToMax() {
+        cart.addItem(CART, "EST-1", CartOperations.MAX_QUANTITY + 1);
+        assertThat(cart.view(CART).items()).singleElement()
+                .satisfies(ci -> assertThat(ci.quantity()).isEqualTo(CartOperations.MAX_QUANTITY));
+    }
+
+    @Test
+    void setQuantity_exactlyAtCap_isKept() {
+        cart.setQuantity(CART, "EST-1", CartOperations.MAX_QUANTITY);
+        assertThat(cart.view(CART).items()).singleElement()
+                .satisfies(ci -> assertThat(ci.quantity()).isEqualTo(CartOperations.MAX_QUANTITY));
+    }
+
+    @Test
     void count_isDistinctLineItems_notTotalQuantity() {
         cart.addItem(CART, "EST-1", 5);
         cart.addItem(CART, "EST-2", 9);

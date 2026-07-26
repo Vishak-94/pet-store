@@ -1,6 +1,9 @@
 package com.petstore.security;
 
 import com.petstore.auth.client.AuthClient;
+import com.petstore.catalog.client.CatalogDtos.CategoryPage;
+import com.petstore.catalog.client.CatalogDtos.ItemPage;
+import com.petstore.catalog.client.CatalogServiceClient;
 import com.petstore.customer.client.CustomerServiceClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +15,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.formLogin;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.logout;
@@ -38,8 +43,19 @@ class SecurityTest {
     @MockBean
     CustomerServiceClient customerClient;    // storefront profile fetch depends on this
 
+    @MockBean
+    CatalogServiceClient catalogClient;      // browse pages ("/", "/search") fetch catalog here
+
     @Test
     void publicPages_areOpen() throws Exception {
+        // The public browse pages call catalog-service over HTTP; stub it so this security slice
+        // stays hermetic (no running catalog-service). We only assert the pages are OPEN (200),
+        // not their catalog content — an empty page is fine for that.
+        when(catalogClient.getCategories(anyInt(), anyInt(), anyString()))
+                .thenReturn(new CategoryPage(List.of(), 0, false));
+        when(catalogClient.searchItems(anyString(), anyInt(), anyInt(), anyString()))
+                .thenReturn(new ItemPage(List.of(), 0, false));
+
         mvc.perform(get("/")).andExpect(status().isOk());
         mvc.perform(get("/search?keyword=fish")).andExpect(status().isOk());
         mvc.perform(get("/login")).andExpect(status().isOk());

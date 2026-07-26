@@ -1,5 +1,7 @@
 package com.petstore.order.web;
 
+import jakarta.validation.Valid;
+
 /**
  * Command object for the HTML checkout POST — the ship-to and bill-to contact
  * blocks the legacy {@code OrderHTMLAction} collected (legacy suffixes {@code _a}
@@ -18,8 +20,8 @@ public class CheckoutForm {
      */
     private String orderKey;
 
-    private ContactInfoForm shipTo = new ContactInfoForm();
-    private ContactInfoForm billTo = new ContactInfoForm();
+    @Valid private ContactInfoForm shipTo = new ContactInfoForm();
+    @Valid private ContactInfoForm billTo = new ContactInfoForm();
 
     public String getOrderKey() { return orderKey; }
     public void setOrderKey(String orderKey) { this.orderKey = orderKey; }

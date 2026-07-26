@@ -21,8 +21,15 @@ public final class Events {
                 correlationId);
     }
 
-    /** Convenience when there's no correlation id in scope. */
+    /**
+     * Build meta for the CURRENT trace: the correlation id is pulled from the ambient
+     * {@link Correlation#current() MDC} rather than passed explicitly. This is the default
+     * producers use, so an event published while handling an HTTP request (or an inbound JMS
+     * event whose id a listener adopted via {@link Correlation#set}) automatically carries that
+     * id end-to-end — no need to thread a correlation id through every service signature. Falls
+     * back to {@code null} when nothing is in scope (e.g. a scheduled job with no originating request).
+     */
     public static EventMeta meta(String type) {
-        return meta(type, null);
+        return meta(type, Correlation.current());
     }
 }

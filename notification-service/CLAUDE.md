@@ -1,11 +1,13 @@
 # notification-service — Claude guide
 
 Customer **email notifications** for the migrated Pet Store. Port **8087**, package
-`com.petstore.notification`. It is a **pure topic subscriber**: it consumes order events
-off the shared broker and "sends" the customer an email. It **owns no data, exposes no
-business API, and publishes nothing** — a consumer-only leaf. It restores the legacy
+`com.petstore.notification`. It is a **pure consumer**: it consumes order events off the
+shared broker and "sends" the customer an email. It **owns no data, exposes no business
+API, and publishes nothing** — a consumer-only leaf. It restores the legacy
 customer-relations mailer MDBs (`MailInvoiceMDB`, `MailOrderApprovalMDB`,
-`MailCompletedOrderMDB`).
+`MailCompletedOrderMDB`). It also hosts the fleet's **DLQ/ExpiryQueue observer**
+(`DlqListener`) — a natural fit since this service is already a JMS observer with no
+business state to corrupt.
 
 > Shared conventions (build/run, hexagonal layering, the JMS event contract, ports, the
 > parity rule) live in the repo skill `../.claude/skills/petstore-dev/SKILL.md`. This file
@@ -27,6 +29,7 @@ notification-service/
     NotificationServiceApplication.java   @SpringBootApplication (scans notification + messaging)
     InvoiceNotificationListener.java      @JmsListener InvoiceTopic  → composer.fromInvoice → send
     OrderStatusNotificationListener.java  @JmsListener OrderStatusTopic → composer.fromStatus → send
+    DlqListener.java                      @JmsListener DLQ + ExpiryQueue (queueFactory) → log ERROR (raw Message)
     mail/
       MailSender.java          PORT — void send(Email)
       LoggingMailSender.java   default dev adapter (logs the email; @ConditionalOnMissingBean smtpMailSender)
@@ -34,8 +37,9 @@ notification-service/
       Email.java               record(to, subject, body) — legacy mailer.ejb.Mail value object
 ```
 
-There is no controller and no persistence layer here by design — the two `@JmsListener`
-beans are the only entry points, `actuator` is the only HTTP surface.
+There is no controller and no persistence layer here by design — the `@JmsListener` beans
+(two topic mailers + the DLQ observer) are the only entry points, `actuator` is the only
+HTTP surface.
 
 ## Build & test (this module only)
 
@@ -61,12 +65,21 @@ list.
 Both are **topics (pub/sub)**: this service gets its **own copy** independently of the
 other subscribers (`InvoiceTopic` also feeds order-processing's `InvoiceListener`).
 
+In addition, `DlqListener` consumes the broker's **`DLQ`** and **`ExpiryQueue`** (anycast
+**queues**, point-to-point) as **raw `jakarta.jms.Message`** — not typed events. A message
+lands there because it was un-processable (e.g. an undeserializable payload), so it is only
+introspected via JMS headers/properties (`_AMQ_ORIG_ADDRESS`, `_type`, `JMSXDeliveryCount`)
+and logged at **ERROR**, never converted (which would re-poison the listener).
+
 ## Invariants (do not break)
 
-1. **Topic subscriber, not queue consumer.** Both listeners MUST use
-   `containerFactory = "topicFactory"` (from the shared `MessagingConfig`). Using the
+1. **The two mail listeners are topic subscribers; the DLQ observer is a queue consumer.**
+   `InvoiceNotificationListener`/`OrderStatusNotificationListener` MUST use
+   `containerFactory = "topicFactory"` (from the shared `MessagingConfig`) — using the
    `queueFactory` would break pub/sub fan-out and steal messages from the sibling
-   subscriber. Never hand-roll JMS config here — it comes from `petstore-messaging`.
+   subscriber. `DlqListener` is the deliberate exception: the DLQ/ExpiryQueue are anycast
+   **queues**, so it uses `queueFactory`. Never hand-roll JMS config here — factories come
+   from `petstore-messaging`.
 2. **`MailSender` is a PORT; `LoggingMailSender` is the dev adapter.** Notification logic
    depends only on the `MailSender` interface. The default adapter just logs the email
    (no SMTP/infra). To send real email, add a JavaMailSender-backed bean **named**
@@ -84,7 +97,12 @@ other subscribers (`InvoiceTopic` also feeds order-processing's `InvoiceListener
    handlers side-effect-safe (composing + logging is naturally idempotent). If a real
    sender is added, dedupe on `meta.eventId`/`orderId`.
 5. **Consumes only; publishes nothing.** This service must never publish to any
-   destination. It is a terminal notification sink.
+   destination. It is a terminal notification sink — including `DlqListener`, which only
+   logs quarantined messages and must never re-publish or re-queue them.
+7. **`DlqListener` must never throw.** It handles messages that are already poison; an
+   exception in the listener would return the message to the DLQ and hot-loop it. All
+   introspection is wrapped so the listener always completes (consumes) the message. It
+   deliberately does NOT deserialize the body to a typed event.
 6. **Missing address is tolerated.** `OrderMailComposer.recipient` falls back to
    `<userId>@petstore.invalid` when `emailId` is blank (legacy also tolerated a missing
    address) — never throw on a missing email.

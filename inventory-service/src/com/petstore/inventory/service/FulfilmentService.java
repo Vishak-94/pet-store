@@ -8,6 +8,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
+import java.util.List;
+
 /**
  * Order fulfilment — the legacy supplier.ear job (OrderFulfillmentFacade). Given
  * an APPROVED order, reserve stock per line (pessimistic lock) and report whether
@@ -54,8 +57,16 @@ public class FulfilmentService {
                     order.orderId(), eventId);
             return true;
         }
+        // Acquire row locks in a GLOBAL, deterministic order (by itemId) so two concurrent orders
+        // sharing items can never lock them in opposite orders — the classic ABBA deadlock. Without
+        // this, order A locking item1→item2 while order B locks item2→item1 deadlocks the DB, which
+        // surfaces as a fulfilment failure + JMS redelivery churn once listener concurrency > 1.
+        // Pure ordering change: all-or-nothing fulfilment is unaffected (the set of lines is the same).
+        List<OrderApprovedEvent.Line> lines = order.lines().stream()
+                .sorted(Comparator.comparing(OrderApprovedEvent.Line::itemId))
+                .toList();
         // First pass: check availability under lock; abort if any line short.
-        for (OrderApprovedEvent.Line line : order.lines()) {
+        for (OrderApprovedEvent.Line line : lines) {
             int available = inventory.quantityOf(line.itemId()).orElse(0);
             if (available < line.quantity()) {
                 log.info("Order {} line {} short ({} < {}) — backordered, nothing shipped",
@@ -63,8 +74,8 @@ public class FulfilmentService {
                 return false;
             }
         }
-        // Second pass: reserve (pessimistic lock per line). Any failure rolls back the tx.
-        for (OrderApprovedEvent.Line line : order.lines()) {
+        // Second pass: reserve (pessimistic lock per line), same global order. Any failure rolls back the tx.
+        for (OrderApprovedEvent.Line line : lines) {
             if (!inventory.tryReserve(line.itemId(), line.quantity())) {
                 log.info("Order {} line {} lost the race — backordered", order.orderId(), line.itemId());
                 throw new BackorderException(order.orderId(), line.itemId());

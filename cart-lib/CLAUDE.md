@@ -60,6 +60,9 @@ genuinely remote call). The cart state itself is purely local/in-memory.
    `setQuantity_zeroOrNegative_silentlyDeletes`. `setQuantity` sets an ABSOLUTE quantity.
 4. **`addItem` RESETS quantity to 1 when qty is null** — it does not increment (pinned by
    `addItem_again_RESETS_quantityToOne_notIncrement`). A non-null qty sets that absolute value.
+   A positive qty is **capped at `MAX_QUANTITY` (999)** in both `addItem` and `setQuantity` —
+   the library is the invariant boundary, so an over-cap request is *clamped* (not rejected) and
+   the caller's JSON reply just reflects the capped value. `qty <= 0` still removes the line (#3).
 5. **`view` skips items no longer in the catalog** (no error) — legacy caught
    `CatalogException` and dropped the entry. But `count` = number of DISTINCT lines in the
    raw cart (legacy `getCount == cart.size()`), so a dangling id still counts as a line even

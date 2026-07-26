@@ -80,10 +80,10 @@ class JpaOutboxStoreTest {
         store.enqueue(msg("o1"));
         long id = store.fetchUnpublished(10, 2).get(0).id();
 
-        store.recordFailure(id);
+        assertEquals(1, store.recordFailure(id), "returns the new attempt count");
         assertEquals(1, store.fetchUnpublished(10, 2).size(), "still under cap → retried");
 
-        store.recordFailure(id);
+        assertEquals(2, store.recordFailure(id), "returns the new attempt count");
         assertTrue(store.fetchUnpublished(10, 2).isEmpty(), "at cap → parked as poison, not retried");
     }
 }

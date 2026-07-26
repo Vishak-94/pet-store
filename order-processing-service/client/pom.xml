@@ -29,6 +29,14 @@
             <artifactId>spring-context</artifactId>
             <version>${spring.version}</version>
         </dependency>
+        <!-- Bean-validation constraint annotations on the wire DTOs (e.g. @NotBlank on a
+             batch status change). API only — the server (app) brings the Hibernate Validator
+             provider via spring-boot-starter-validation. Mirrors customer-service-client. -->
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+            <version>3.0.2</version>
+        </dependency>
     </dependencies>
 
     <build>

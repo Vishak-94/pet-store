@@ -5,6 +5,7 @@
 <h1>Warehouse — Staff Sign On</h1>
 <p th:if="${error}" style="color:red" th:text="${error}">error</p>
 <p th:if="${param.loggedout}" style="color:green">You have been signed off.</p>
+<!-- th:action auto-injects the hidden _csrf token (CSRF enabled for UI routes) — keep th:action. -->
 <form th:action="@{/warehouse/login}" method="post">
     <p><label>Username: <input type="text" name="username"/></label></p>
     <p><label>Password: <input type="password" name="password"/></label></p>
