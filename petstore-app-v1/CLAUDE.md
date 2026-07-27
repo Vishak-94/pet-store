@@ -20,7 +20,7 @@ See also: [`docs/LLD.md`](docs/LLD.md) (class + sequence diagrams), the repo roo
 |---------|-------|
 | _(root)_ | `PetStoreApplication` — `@SpringBootApplication @EnableJms @ConfigurationPropertiesScan` |
 | `catalog/web`, `catalog/domain`, `catalog/` | `CatalogController`; framework-free view models `Category`/`Product`/`Item`; `CatalogViewMapper` (SDK DTO → view model) |
-| `inventory/web`, `inventory/client` | `StockController` (`GET /api/stock/{itemId}` — same-origin proxy for the after-load stepper cap); `InventoryClient` (thin RestClient over inventory-service's public availability read; no SDK jar exists) |
+| `inventory/web` | `StockController` (`GET /api/stock/{itemId}` — same-origin proxy for the after-load stepper cap). `InventoryClient` now comes from the imported **`inventory-service-client`** SDK jar (package `com.petstore.inventory.client`), which also carries the `SingleFlightStockCache`; no storefront-local client class remains |
 | `cart/web`, `cart/service`, `cart/config`, `cart/domain` | `CartController`, `CartIdFilter`; `CartService` (adapter over cart-lib); `CartConfig` (wires `CartStore`/`CartOperations`); `CartItem` |
 | `order/web`, `order/service` | `CheckoutController` (JSON), `CheckoutForm`, `ContactInfoForm`, `MissingFormDataException`; `OrderService`, `OrderIdGenerator`, `EmptyCartException` |
 | `customer/web` | `CustomerController` — account self-service (M4) |
@@ -103,6 +103,7 @@ auth :8086) should be up for the UI to fully work.
 | `auth-client` (`AuthClient`) | `CustomerServiceAuthProvider` | Form-login → auth-service (:8086); returns JWT + userId + roles |
 | `customer-service-client` (`CustomerServiceClient`) | `StorefrontController`, `CustomerController`, `SignOnLocaleSuccessHandler` | Register; read/update account/profile/card (:8081), Bearer = session JWT |
 | `catalog-service-client` (`CatalogServiceClient`) | `CatalogController`, cart-lib | Browse/search + item price resolution (:8083) |
+| `inventory-service-client` (`InventoryClient`) | `StockController`, `CatalogController.resolveStock` | Public per-item availability (:8085) for the display-only badge / stepper cap; carries the in-process `SingleFlightStockCache` (TTL) |
 | `cart-lib` (`CartOperations`/`CartStore`) | `CartService` | In-process cart + 15-min sliding TTL |
 | `order-processing-client` (`OrderProcessingClient`) | `OrderService` | Synchronous checkout intake — `POST /api/orders/intake` (:8088), Bearer = shopper JWT |
 | `petstore-messaging` (`Events`, `Correlation`) | `CorrelationIdFilter` | Correlation-id bridge; no longer used to publish on checkout |

@@ -1,5 +1,6 @@
 package com.petstore.inventory.web;
 
+import com.petstore.inventory.client.InventoryServiceEndpoints;
 import com.petstore.inventory.repository.InventoryStore;
 import com.petstore.inventory.service.RestockService;
 import org.springframework.http.ResponseEntity;
@@ -18,15 +19,16 @@ import java.util.Map;
 @RestController
 public class InventoryApiController {
 
-    /** Route paths (kept as constants so they can't drift from the security matchers). */
-    private static final String ALL_INVENTORY = "/api/inventory";
-    private static final String AVAILABILITY = "/api/inventory/{itemId}/availability";
-    private static final String RESTOCK = "/api/inventory/{itemId}/restock";
+    /** Route paths — single-sourced from the client SDK contract so the mapped paths, the security
+     *  matchers, and every caller provably agree (mirrors catalog-service / order-processing). */
+    private static final String ALL_INVENTORY = InventoryServiceEndpoints.ALL_INVENTORY;
+    private static final String AVAILABILITY = InventoryServiceEndpoints.AVAILABILITY;
+    private static final String RESTOCK = InventoryServiceEndpoints.RESTOCK;
     /** JSON response body keys. */
     private static final String KEY_ERROR = "error";
     private static final String KEY_ITEM_ID = "itemId";
     private static final String KEY_ADDED = "added";
-    private static final String KEY_QUANTITY = "quantity";
+    private static final String KEY_QUANTITY = InventoryServiceEndpoints.KEY_QUANTITY;
     /** Rejection message when a non-positive restock quantity is requested. */
     private static final String ERROR_QTY_POSITIVE = "qty must be > 0";
 

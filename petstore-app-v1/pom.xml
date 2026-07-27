@@ -73,6 +73,16 @@
             <version>1.0.0</version>
         </dependency>
 
+        <!-- Importable client SDK for inventory-service's public per-item availability read.
+             Brings the InventoryClient + its in-process SingleFlightStockCache (TTL) with it, so
+             the display-only stock badge / stepper cap is served from cache and every consumer of
+             this jar gets the single-flight caching for free. -->
+        <dependency>
+            <groupId>com.petstore</groupId>
+            <artifactId>inventory-service-client</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+
         <!-- Importable client SDK for order-processing-service (OPC). Checkout now places the
              order via a SYNCHRONOUS call to OPC's /api/orders/intake instead of publishing a
              PurchaseOrderEvent to PurchaseOrderQueue (see DECISIONS.md). The storefront proxies

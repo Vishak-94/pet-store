@@ -21,14 +21,17 @@ echo "Using JAVA_HOME=$JAVA_HOME"
 
 # 1) Shared libraries + multi-module parents → install to ~/.m2 (order matters:
 #    catalog-service-client is needed by cart-lib; auth-client by the services).
-LIBS=(petstore-messaging auth-service catalog-service customer-service cart-lib)
+#    inventory-service is INSTALLED (not just packaged) because it now publishes an importable
+#    client SDK jar (inventory-service-client) that petstore-app-v1 depends on; installing the
+#    aggregator builds+installs both the client jar and the app.
+LIBS=(petstore-messaging auth-service catalog-service customer-service cart-lib inventory-service)
 for m in "${LIBS[@]}"; do
   echo "==> install $m"
   (cd "$m" && mvn -q clean install -DskipTests)
 done
 
 # 2) Leaf services (executable apps) → package.
-APPS=(admin-office-service inventory-service notification-service petstore-app-v1)
+APPS=(admin-office-service notification-service petstore-app-v1)
 for m in "${APPS[@]}"; do
   echo "==> package $m"
   (cd "$m" && mvn -q clean package -DskipTests)

@@ -110,7 +110,7 @@ start customer-service   customer-service/app/target/customer-service-1.0.0.jar 
 start catalog-service    catalog-service/app/target/catalog-service-1.0.0.jar     8083 "Started CatalogServiceApplication"
 start order-processing-service order-processing-service/app/target/order-processing-service-1.0.0.jar 8088 "Started OrderProcessingApplication" "$([ "$OPC_STORE" = "mongo" ] && echo mongo)"
 start admin-office-service admin-office-service/target/admin-office-service-1.0.0.jar 8082 "Started WarehouseServiceApplication"
-start inventory-service  inventory-service/target/inventory-service-1.0.0.jar     8085 "Started InventoryServiceApplication"
+start inventory-service  inventory-service/app/target/inventory-service-1.0.0.jar     8085 "Started InventoryServiceApplication"
 start notification-service notification-service/target/notification-service-1.0.0.jar 8087 "Started NotificationServiceApplication"
 
 echo ""

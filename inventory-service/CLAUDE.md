@@ -6,8 +6,14 @@ PO / fulfil / ship / invoice; `RcvrRequestProcessor` = restock "receiver" UI).
 
 - **Port:** `8085`
 - **Role:** `SUPPLIER` (ADMIN also allowed on inventory endpoints)
-- **Java package:** `com.petstore.inventory`
-- **Layout:** flat module (`src/`, `resources/`; no `test/` present yet)
+- **Java package:** `com.petstore.inventory` (server) / `com.petstore.inventory.client` (SDK jar)
+- **Layout:** two-module Maven aggregator (mirrors catalog / customer / order-processing):
+  - `client/` — importable **`inventory-service-client`** SDK jar (standard `src/main/java` layout):
+    `InventoryServiceEndpoints` (the HTTP contract), `InventoryClient` (thin RestClient wrapper) and
+    its in-process `SingleFlightStockCache` (TTL, single-flight refresh). No Spring Boot — plain jar.
+  - `app/` — the Spring Boot service (`src/`, `resources/`, `test/`); depends on the client jar so
+    the server maps the same `InventoryServiceEndpoints` paths its callers use.
+  - root `pom.xml` — `packaging=pom` aggregator over `client` + `app`, single-versioned.
 
 Read the repo skill `.claude/skills/petstore-dev/SKILL.md` first for the fleet-wide picture
 (module map, JMS contract, build/run, parity rule). This file is scoped to inventory-service.
@@ -107,8 +113,12 @@ libs `petstore-messaging` and `auth-client` — build those first (`./build-all.
 installs them, then packages this module).
 
 ```bash
-cd inventory-service && mvn -q clean package     # build + tests (test dir is optional)
+cd inventory-service && mvn -q clean install     # builds+installs BOTH modules (client jar + app)
 ```
+`install` (not just `package`) because the storefront depends on the published
+`inventory-service-client` jar; installing the aggregator builds the client, then the app.
+The runnable jar is `app/target/inventory-service-1.0.0.jar`; the SDK is
+`client/target/inventory-service-client-1.0.0.jar`.
 
 Run needs the shared Artemis broker (hosted by `petstore-app-v1`) up on `:61616`; prefer
 `./run-all.sh` from the repo root. New tests go in `test/` and must not import legacy EJB types;
