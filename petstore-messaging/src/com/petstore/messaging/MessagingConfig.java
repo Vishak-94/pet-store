@@ -7,6 +7,7 @@ import com.petstore.messaging.events.InvoiceEvent;
 import com.petstore.messaging.events.OrderApprovedEvent;
 import com.petstore.messaging.events.OrderStatusEvent;
 import com.petstore.messaging.events.PurchaseOrderEvent;
+import com.petstore.messaging.events.RestockEvent;
 import jakarta.jms.ConnectionFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -48,7 +49,8 @@ public class MessagingConfig {
             PurchaseOrderEvent.TYPE, PurchaseOrderEvent.class,
             OrderApprovedEvent.TYPE, OrderApprovedEvent.class,
             InvoiceEvent.TYPE, InvoiceEvent.class,
-            OrderStatusEvent.TYPE, OrderStatusEvent.class);
+            OrderStatusEvent.TYPE, OrderStatusEvent.class,
+            RestockEvent.TYPE, RestockEvent.class);
 
     @Bean
     public MessageConverter jacksonJmsMessageConverter() {

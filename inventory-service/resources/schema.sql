@@ -6,12 +6,18 @@ CREATE TABLE IF NOT EXISTS inventory (
     CONSTRAINT ck_inventory_nonneg CHECK (quantity >= 0)
 );
 
--- Dedup ledger for at-least-once JMS delivery: one row per order-approved event
--- whose stock has been decremented. The PK on event_id makes a redelivery a no-op
--- (second insert fails), preventing a double-decrement / oversell on retry.
-CREATE TABLE IF NOT EXISTS processed_event (
-    event_id VARCHAR(64) NOT NULL,
-    CONSTRAINT pk_processed_event PRIMARY KEY (event_id)
+-- Dedup ledger for idempotent fulfilment: one row per ORDER whose stock has been
+-- decremented (shipped). Keyed by order_id (an order ships at most once), NOT the
+-- message eventId, so it also stops a re-driven OrderApprovedEvent (fresh eventId,
+-- published for every APPROVED order on each restock — legacy processPendingPO,
+-- PARITY_AUDIT H2/M8) from double-decrementing an already-shipped order. The PK makes
+-- a redelivery/re-drive a no-op (second insert fails).
+-- Superseded the earlier event_id-keyed `processed_event` table; drop it if present so
+-- the durable file DB doesn't keep the stale ledger around.
+DROP TABLE IF EXISTS processed_event;
+CREATE TABLE IF NOT EXISTS fulfilled_order (
+    order_id VARCHAR(64) NOT NULL,
+    CONSTRAINT pk_fulfilled_order PRIMARY KEY (order_id)
 );
 
 -- NOTE: no credential store here anymore. Supplier logins are authenticated by

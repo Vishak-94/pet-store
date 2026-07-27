@@ -1,6 +1,7 @@
 package com.petstore.inventory.web;
 
 import com.petstore.inventory.repository.InventoryStore;
+import com.petstore.inventory.service.RestockService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,24 +30,68 @@ public class InventoryApiController {
     private static final String ERROR_QTY_POSITIVE = "qty must be > 0";
 
     private final InventoryStore inventory;
+    private final RestockService restockService;
 
-    public InventoryApiController(InventoryStore inventory) {
+    public InventoryApiController(InventoryStore inventory, RestockService restockService) {
         this.inventory = inventory;
+        this.restockService = restockService;
     }
 
+    /**
+     * Current stock level for every known item — a snapshot of the {@code inventory} table.
+     * SUPPLIER/ADMIN only (verify-only JWT). Read-only; no locking.
+     *
+     * <pre>{@code
+     * GET /api/inventory
+     *
+     * 200 OK
+     * {
+     *   "EST-1": 42,
+     *   "EST-2": 1,
+     *   "EST-6": 0
+     * }
+     * }</pre>
+     *
+     * @return item-id → on-hand quantity for all items (empty map if none)
+     */
     @GetMapping(ALL_INVENTORY)
     public Map<String, Integer> inventory() {
         return inventory.all();
     }
 
+    /**
+     * Restock a single item — the JSON equivalent of the supplier "receiver" job: additively
+     * add {@code qty} to on-hand stock, then publish a {@code RestockEvent} so order-processing
+     * re-drives its APPROVED (backordered) orders through fulfilment (legacy processPendingPO on
+     * restock; PARITY_AUDIT H2/M8). Stock is still stored per-item (no persisted supplier PO).
+     *
+     * <pre>{@code
+     * POST /api/inventory/EST-2/restock?qty=10
+     *
+     * 200 OK
+     * { "itemId": "EST-2", "added": 10, "quantity": 11 }
+     * }</pre>
+     *
+     * A non-positive quantity is rejected and nothing is changed:
+     * <pre>{@code
+     * POST /api/inventory/EST-2/restock?qty=0
+     *
+     * 400 Bad Request
+     * { "error": "qty must be > 0" }
+     * }</pre>
+     *
+     * @param itemId the item to restock (path variable)
+     * @param qty    quantity to add; must be {@code > 0}
+     * @return 200 with the itemId, amount added and resulting quantity; 400 if {@code qty <= 0}
+     */
     @PostMapping(RESTOCK)
     public ResponseEntity<Map<String, Object>> restock(@PathVariable String itemId,
                                                        @RequestParam int qty) {
         if (qty <= 0) {
             return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, ERROR_QTY_POSITIVE));
         }
-        inventory.addQuantity(itemId, qty);
+        int onHand = restockService.restock(itemId, qty);   // adds stock + publishes RestockEvent
         return ResponseEntity.ok(Map.of(KEY_ITEM_ID, itemId, KEY_ADDED, qty,
-                KEY_QUANTITY, inventory.quantityOf(itemId).orElse(0)));
+                KEY_QUANTITY, onHand));
     }
 }

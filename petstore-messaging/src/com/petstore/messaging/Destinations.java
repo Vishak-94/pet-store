@@ -28,6 +28,7 @@ public final class Destinations {
     public static final String APPROVED_ORDER_NAME = "ApprovedOrderQueue";
     public static final String INVOICE_NAME = "InvoiceTopic";
     public static final String ORDER_STATUS_NAME = "OrderStatusTopic";
+    public static final String RESTOCK_NAME = "RestockTopic";
 
     /** checkout → warehouse: a new purchase order to process. One consumer. */
     public static final Destination PURCHASE_ORDER = queue(PURCHASE_ORDER_NAME);
@@ -49,4 +50,13 @@ public final class Destinations {
      * MailOrderApprovalMDB / MailCompletedOrderMDB triggers.
      */
     public static final Destination ORDER_STATUS = topic(ORDER_STATUS_NAME);
+
+    /**
+     * inventory → (order-processing + any others): fresh stock arrived for an item.
+     * A TOPIC so multiple subscribers can react independently — order-processing
+     * re-drives its APPROVED (backordered) orders through fulfilment (legacy supplier
+     * {@code processPendingPO} on restock; PARITY_AUDIT H2/M8), and future subscribers
+     * (analytics, low-stock alerting) can attach without touching the producer.
+     */
+    public static final Destination RESTOCK = topic(RESTOCK_NAME);
 }

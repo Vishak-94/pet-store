@@ -2,7 +2,7 @@ package com.petstore.inventory.service;
 
 import com.petstore.messaging.events.OrderApprovedEvent;
 import com.petstore.inventory.repository.InventoryStore;
-import com.petstore.inventory.repository.ProcessedEventStore;
+import com.petstore.inventory.repository.FulfilledOrderStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -30,31 +30,55 @@ public class FulfilmentService {
     private static final Logger log = LoggerFactory.getLogger(FulfilmentService.class);
 
     private final InventoryStore inventory;
-    private final ProcessedEventStore processedEvents;
+    private final FulfilledOrderStore fulfilledOrders;
 
-    public FulfilmentService(InventoryStore inventory, ProcessedEventStore processedEvents) {
+    public FulfilmentService(InventoryStore inventory, FulfilledOrderStore fulfilledOrders) {
         this.inventory = inventory;
-        this.processedEvents = processedEvents;
+        this.fulfilledOrders = fulfilledOrders;
     }
 
     /**
      * Reserve stock for every line and ship, atomically. Returns true if fully
      * shipped; false (and no decrement) if any line is short.
      *
-     * <p>Idempotent against JMS at-least-once redelivery: an event whose stock was
-     * already decremented (marked in {@link ProcessedEventStore}) is treated as
-     * already shipped and NOT decremented again. Because the availability check,
-     * the reservations, and the processed-marker all run in this one transaction,
-     * they commit or roll back together — a redelivery can never oversell. Only a
-     * fully-shipped event is marked; a short-stock event decrements nothing, so its
-     * redelivery is inherently safe to re-evaluate.
+     * <p>Idempotent by {@code orderId}: an order whose stock was already decremented
+     * (marked in {@link FulfilledOrderStore}) is treated as already shipped and NOT
+     * decremented again. Keying on the order (which ships at most once) rather than the
+     * message {@code eventId} makes this safe against BOTH a plain JMS redelivery AND a
+     * <em>re-driven</em> event — order-processing re-publishes a fresh {@code OrderApprovedEvent}
+     * (new eventId) for every APPROVED order on each restock (PARITY_AUDIT H2/M8), and an
+     * eventId-keyed ledger would miss that. Because the availability check, the reservations,
+     * and the fulfilled-marker all run in this one transaction, they commit or roll back
+     * together — a redelivery/re-drive can never oversell. Only a fully-shipped order is
+     * marked; a short-stock order decrements nothing, so re-evaluating it later is safe.
+     *
+     * <p>Example inbound order (as delivered by {@link OrderApprovedListener}):
+     * <pre>{@code
+     * {
+     *   "meta": { "eventId": "evt-9f3", "type": "OrderApproved", "correlationId": "corr-42" },
+     *   "orderId": "1001",
+     *   "lines": [
+     *     { "itemId": "EST-1", "quantity": 2, "unitPrice": 12.50 },
+     *     { "itemId": "EST-2", "quantity": 1, "unitPrice": 40.00 }
+     *   ]
+     * }
+     * }</pre>
+     * If both lines have stock → all reserved, returns {@code true}. If {@code EST-2} (seeded at
+     * qty 1) is short → nothing reserved, returns {@code false} (order stays APPROVED for retry).
+     *
+     * @param order the approved order to fulfil; {@code orderId} keys the dedup ledger and
+     *              {@code lines} are the item/quantity pairs to reserve
+     * @return {@code true} if every line was reserved (or the order was already fulfilled on a
+     *         redelivery/re-drive); {@code false} if any line was short (no stock decremented)
+     * @throws BackorderException if a line loses the stock race in the locked second pass,
+     *              rolling back any partial reservation in this transaction
      */
     @Transactional
     public boolean fulfil(OrderApprovedEvent order) {
-        String eventId = order.meta() == null ? null : order.meta().eventId();
-        if (processedEvents.isProcessed(eventId)) {
-            log.info("Order {} event {} already processed — redelivery, skipping decrement",
-                    order.orderId(), eventId);
+        String orderId = order.orderId();
+        if (fulfilledOrders.isFulfilled(orderId)) {
+            log.info("Order {} already fulfilled — redelivery or restock re-drive, skipping decrement",
+                    orderId);
             return true;
         }
         // Acquire row locks in a GLOBAL, deterministic order (by itemId) so two concurrent orders
@@ -81,10 +105,10 @@ public class FulfilmentService {
                 throw new BackorderException(order.orderId(), line.itemId());
             }
         }
-        // Record the applied event in the SAME transaction as the decrement, so the
-        // dedup marker and the stock change are atomic (the PK on event_id is the backstop).
-        if (eventId != null) {
-            processedEvents.markProcessed(eventId);
+        // Record the shipped order in the SAME transaction as the decrement, so the
+        // dedup marker and the stock change are atomic (the PK on order_id is the backstop).
+        if (orderId != null) {
+            fulfilledOrders.markFulfilled(orderId);
         }
         log.info("Order {} fully fulfilled ({} lines)", order.orderId(), order.lines().size());
         return true;

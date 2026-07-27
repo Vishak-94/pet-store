@@ -14,11 +14,15 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.mockito.InOrder;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /** Unit tests for the migrated batch-approval (legacy updateOrders) + sales aggregation (legacy getChartInfo). */
@@ -74,6 +78,37 @@ class AdminServiceTest {
         when(orders.statusOf("missing")).thenReturn(Optional.empty());
         assertThrows(IllegalArgumentException.class, () -> admin.updateOrders(
                 List.of(new OrderStatusChange("missing", OrderStatus.APPROVED))));
+    }
+
+    @Test
+    void redriveApproved_reDispatchesEveryApprovedOrder_oldestFirst() {
+        // Backordered (still APPROVED) orders, returned by the store in a NON-chronological order
+        // so the test proves AdminService sorts them, not the store.
+        WarehouseOrder newer = order("o-new", OrderStatus.APPROVED, Instant.parse("2026-03-01T00:00:00Z"));
+        WarehouseOrder older = order("o-old", OrderStatus.APPROVED, Instant.parse("2026-01-01T00:00:00Z"));
+        when(orders.orderIdsByStatus(OrderStatus.APPROVED)).thenReturn(List.of("o-new", "o-old"));
+        when(orders.findById("o-new")).thenReturn(Optional.of(newer));
+        when(orders.findById("o-old")).thenReturn(Optional.of(older));
+
+        admin.redriveApprovedForFulfilment();
+
+        // Both re-dispatched, oldest created first (longest-waiting backorder gets first claim on stock).
+        InOrder inOrder = inOrder(approvalGateway);
+        inOrder.verify(approvalGateway).dispatchForFulfilment(older);
+        inOrder.verify(approvalGateway).dispatchForFulfilment(newer);
+        // Pure fulfilment retry — no status change, no customer email.
+        verify(orders, never()).updateStatus(any(), any());
+        verifyNoInteractions(statusGateway);
+    }
+
+    @Test
+    void redriveApproved_noApprovedOrders_isNoOp() {
+        when(orders.orderIdsByStatus(OrderStatus.APPROVED)).thenReturn(List.of());
+
+        admin.redriveApprovedForFulfilment();
+
+        verifyNoInteractions(approvalGateway);
+        verifyNoInteractions(statusGateway);
     }
 
     @Test

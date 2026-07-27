@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.petstore.messaging.events.InvoiceEvent;
 import com.petstore.messaging.events.PurchaseOrderEvent;
+import com.petstore.messaging.events.RestockEvent;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -71,9 +72,21 @@ class EventSerializationTest {
     }
 
     @Test
+    void restockEvent_roundTrips() throws Exception {
+        var e = new RestockEvent(Events.meta(RestockEvent.TYPE, "corr-9"), "EST-2", 10);
+        String json = mapper.writeValueAsString(e);
+        assertThat(json).contains("\"type\":\"Restock\"").contains("\"itemId\":\"EST-2\"")
+                .contains("\"quantityAdded\":10");
+        RestockEvent back = mapper.readValue(json, RestockEvent.class);
+        assertThat(back.itemId()).isEqualTo("EST-2");
+        assertThat(back.quantityAdded()).isEqualTo(10);
+        assertThat(back.meta().correlationId()).isEqualTo("corr-9");
+    }
+
+    @Test
     void typeIdMap_coversAllEvents() {
         assertThat(MessagingConfig.TYPE_IDS)
-                .containsKeys("PurchaseOrder", "OrderApproved", "Invoice", "OrderStatus");
+                .containsKeys("PurchaseOrder", "OrderApproved", "Invoice", "OrderStatus", "Restock");
     }
 
     @Test
@@ -81,5 +94,6 @@ class EventSerializationTest {
         assertThat(Destinations.PURCHASE_ORDER.topic()).isFalse();
         assertThat(Destinations.APPROVED_ORDER.topic()).isFalse();
         assertThat(Destinations.INVOICE.topic()).isTrue();   // legacy InvoiceTopic
+        assertThat(Destinations.RESTOCK.topic()).isTrue();   // broadcast: stock arrived
     }
 }
