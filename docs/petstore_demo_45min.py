@@ -185,6 +185,38 @@ def image_slide(title, subtitle, img_name, tag=None):
     return s
 
 
+def gap_slide(num, construct, subtitle, legacy_pts, problem_pts, response_pts, footer=None):
+    """One detailed slide per legacy gap.
+       Left column = what it was (blue) + why it blocks a port (red);
+       right light panel = the migration response (green)."""
+    s = slide()
+    title_bar(s, f"Gap {num} — {construct}", subtitle, tag="gap")
+    LW = Inches(6.35)
+    # ── left: what it was in the legacy app
+    textbox(s, Inches(0.5), Inches(1.26), LW, Inches(0.34),
+            "In the legacy app", size=15, color=BLUE, bold=True)
+    bullets(s, Inches(0.5), Inches(1.66), LW, Inches(2.5),
+            [(t, {**o, "size": o.get("size", 13)}) for t, o in
+             ((p if isinstance(p, tuple) else (p, {})) for p in legacy_pts)], size=13, gap=5)
+    # ── left: why it blocks a straight port
+    textbox(s, Inches(0.5), Inches(4.24), LW, Inches(0.34),
+            "Why it blocks a straight port", size=15, color=RED, bold=True)
+    bullets(s, Inches(0.5), Inches(4.64), LW, Inches(2.55),
+            [(t, {**o, "size": o.get("size", 13), "color": o.get("color", NAVY)}) for t, o in
+             ((p if isinstance(p, tuple) else (p, {})) for p in problem_pts)], size=13, gap=5)
+    # ── right: migration response (light panel)
+    rect(s, Inches(7.05), Inches(1.26), Inches(5.85), Inches(5.95), LIGHT)
+    textbox(s, Inches(7.28), Inches(1.4), Inches(5.4), Inches(0.4),
+            "Migration response", size=15, color=GREEN, bold=True)
+    bullets(s, Inches(7.28), Inches(1.92), Inches(5.4), Inches(4.7),
+            [(t, {**o, "size": o.get("size", 13)}) for t, o in
+             ((p if isinstance(p, tuple) else (p, {})) for p in response_pts)], size=13, gap=6)
+    if footer:
+        textbox(s, Inches(7.28), Inches(6.62), Inches(5.4), Inches(0.55),
+                footer, size=11, color=GREY)
+    return s
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 1 — TITLE
 # ═══════════════════════════════════════════════════════════════════════════
@@ -212,7 +244,7 @@ table(s, Inches(0.5), Inches(1.4), Inches(12.3), Inches(5.4), [
     ["#", "Section", "Time"],
     ["1", "The brief & what 'done' means", "2 min"],
     ["2", "Legacy architecture — the starting point", "3 min"],
-    ["3", "Gaps in the legacy design", "4 min"],
+    ["3", "Gaps in the legacy design (overview + 1 slide per gap)", "8 min"],
     ["4", "Migration strategy & principles", "3 min"],
     ["5", "Phased migration plan (7 phases)", "5 min"],
     ["6", "JMS message migration — XML → JSON (Anti-Corruption Layer)", "4 min"],
@@ -252,74 +284,298 @@ image_slide("Legacy Architecture — the starting point",
             "petstore_legacy_highlevel.png", tag="3 min")
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 5 — GAPS IN THE LEGACY DESIGN
+# 5 — GAPS IN THE LEGACY DESIGN — overview, then one detailed slide per gap
 # ═══════════════════════════════════════════════════════════════════════════
 s = slide()
-title_bar(s, "Gaps in the Legacy Design", "What blocks a straight port — and why it matters", tag="4 min")
-table(s, Inches(0.35), Inches(1.32), Inches(12.65), Inches(5.7), [
-    ["Legacy construct", "The problem", "Migration response"],
-    ["J2EE 1.3 EAR + Sun RI + Ant",
-     "Dead runtime; no Java-21 app server; javax.* everywhere",
-     "Spring Boot 3 fat-jars · Maven · javax→jakarta"],
-    ["EJB 2.x CMP (container-mapped)",
-     "Home/Remote/Local trios, ejb-jar.xml, ServiceLocator/JNDI — untestable",
-     "Spring Data JPA entities + repository ports"],
-    ["Messages as XML over JMS (xmldocuments)",
-     "Hand-marshalled TPA/XML DTOs; brittle, verbose, DTD-bound",
-     "JSON event envelope + Anti-Corruption Layer (§6)"],
-    ["Shared DB, tables duplicated per EAR",
-     "ContactInfo/Address/CreditCard copied across apps; no single owner",
-     "DB-per-service; each service owns its schema"],
-    ["3 MDB status writers + WAF StateMachine",
-     "God-objects; order status mutated in 3 places",
-     "One OrderStatusService; enum + guarded transitions"],
-    ["Implicit EJB container locking",
-     "Oversell/negative-stock risk once container lock is gone",
-     "Pessimistic SELECT…FOR UPDATE + CHECK(qty>=0)"],
-    ["Swing / Java Web Start admin",
-     "Dead on a modern JVM",
-     "REST admin endpoints + server-rendered console"],
-    ["SOAP webservices/ variant",
-     "Duplicate build of the same logic",
-     "Dropped — JMS build is the one source of truth"],
-], col_widths=[Inches(3.4), Inches(5.0), Inches(4.25)], fsize=10)
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 5b — PRIMER: WHAT IS EJB (and why it dominates the legacy app)
-# ═══════════════════════════════════════════════════════════════════════════
-s = slide()
-title_bar(s, "Primer — What is EJB, and why it's everywhere here",
-          "Enterprise JavaBeans: the J2EE server-side component model the legacy app is built on", tag="context")
-bullets(s, Inches(0.5), Inches(1.35), Inches(6.5), Inches(5.7), [
-    ("EJB = Enterprise JavaBeans — the standard server-side component model of J2EE (2000s).",
-     {"bold": True, "size": 16, "color": BLUE}),
-    ("A bean is a managed Java object; the app server (Sun J2EE RI) hosts it and supplies "
-     "enterprise services declaratively — you write logic, the container adds the plumbing:",
-     {"size": 14}),
-    ("Transactions, security, pooling, remoting, lifecycle.", {"level": 1, "size": 14}),
-    ("Persistence — CMP (Container-Managed Persistence) auto-maps entity beans to DB tables.",
-     {"level": 1, "size": 14, "color": AMBER}),
-    ("Three bean flavours the Pet Store uses:", {"bold": True, "size": 16, "color": BLUE}),
-    ("Session beans — business logic (e.g. ShoppingCart, SignOn, OPCAdminFacade).", {"level": 1, "size": 14}),
-    ("Entity beans (CMP) — persistent data (Customer, Account, PurchaseOrder, Inventory…).",
-     {"level": 1, "size": 14}),
-    ("Message-driven beans (MDB) — JMS consumers (PurchaseOrderMDB, InvoiceMDB, Mail*MDB).",
-     {"level": 1, "size": 14}),
+title_bar(s, "Gaps in the Legacy Design — Overview",
+          "8 structural gaps block a straight port · each gets its own slide next", tag="gaps")
+bullets(s, Inches(0.5), Inches(1.35), Inches(12.4), Inches(5.9), [
+    ("These are not bugs — the app worked in 2002. They are design decisions that a modern JVM, "
+     "modern tooling, and a service-per-context target render unworkable or unsafe.",
+     {"size": 15, "color": NAVY, "space_after": 10}),
+    ("Gap 1 — J2EE 1.3 EAR packaging on the Sun Reference Implementation, built with Ant.",
+     {"size": 14, "bold": True, "color": BLUE}),
+    ("Gap 2 — EJB 2.x: entity beans (CMP), session beans and message-driven beans everywhere.",
+     {"size": 14, "bold": True, "color": BLUE}),
+    ("Gap 3 — inter-app messages hand-marshalled as XML documents (TPA/DTD) over JMS.",
+     {"size": 14, "bold": True, "color": BLUE}),
+    ("Gap 4 — one shared Cloudscape database with the same tables duplicated per EAR.",
+     {"size": 14, "bold": True, "color": BLUE}),
+    ("Gap 5 — order status mutated in three MDBs plus the WAF screen-flow state machine.",
+     {"size": 14, "bold": True, "color": BLUE}),
+    ("Gap 6 — concurrency safety left implicit to the EJB container (oversell risk).",
+     {"size": 14, "bold": True, "color": BLUE}),
+    ("Gap 7 — the admin tool is a Swing / Java Web Start rich client.",
+     {"size": 14, "bold": True, "color": BLUE}),
+    ("Gap 8 — a parallel SOAP 'webservices' build re-implements the same order logic.",
+     {"size": 14, "bold": True, "color": BLUE}),
 ])
-rect(s, Inches(7.2), Inches(1.5), Inches(5.65), Inches(5.3), LIGHT)
-textbox(s, Inches(7.42), Inches(1.62), Inches(5.25), Inches(0.5),
-        "Why it blocks a straight port", size=15, color=NAVY, bold=True)
-bullets(s, Inches(7.42), Inches(2.2), Inches(5.25), Inches(4.5), [
-    ("Every bean needs an interface trio + XML: Home + Remote/Local + Bean class, "
-     "wired in ejb-jar.xml / sun-j2ee-ri.xml.", {"size": 13}),
-    ("Beans are found by JNDI lookup via a ServiceLocator — not injected. Hard to unit-test "
-     "(needs a running container).", {"size": 13, "color": RED}),
-    ("Runs only on a J2EE 1.3 app server on javax.* APIs — no such server on Java 21.", {"size": 13, "color": RED}),
-    ("Modern mapping:", {"size": 14, "bold": True, "color": GREEN}),
-    ("Session bean → Spring @Service", {"level": 1, "size": 13, "color": GREEN}),
-    ("Entity bean (CMP) → JPA @Entity + repository port", {"level": 1, "size": 13, "color": GREEN}),
-    ("MDB → @JmsListener; JNDI/ServiceLocator → dependency injection", {"level": 1, "size": 13, "color": GREEN}),
-], gap=8)
+
+# ── Gap 1 — J2EE 1.3 EAR / Sun RI / Ant ──────────────────────────────────────
+gap_slide(
+    1, "J2EE 1.3 EAR packaging on the Sun Reference Implementation",
+    "The runtime itself is gone — before any code, the deployment model must change",
+    legacy_pts=[
+        ("Ships as 4 enterprise archives (.ear): petstore, opc, supplier, admin — each a bundle "
+         "of web (.war) + EJB (.jar) modules glued by application.xml.", {}),
+        ("Runs only inside the J2EE 1.3 Sun Reference Implementation app server (Cloudscape DB, "
+         "JNDI naming, JMS provider all supplied by that container).", {}),
+        ("Built with Ant + hand-written deployment descriptors; deployed by dropping EARs into the "
+         "server and editing sun-j2ee-ri.xml bindings.", {}),
+        ("Every import is javax.* (javax.ejb, javax.servlet, javax.jms, javax.naming).", {}),
+    ],
+    problem_pts=[
+        ("The Sun RI app server no longer exists and does not run on a modern JVM — there is nothing "
+         "to deploy an EAR into on Java 21.", {"color": RED}),
+        ("Jakarta EE 9+ renamed every javax.* package to jakarta.* — legacy imports won't even "
+         "compile against current libraries.", {"color": RED}),
+        ("EAR-in-container assumes a heavyweight app server; it can't be a self-contained, "
+         "'java -jar' cloud artifact.", {"color": RED}),
+    ],
+    response_pts=[
+        ("Spring Boot 3.3.5 fat-jars — each service is one self-contained executable jar with an "
+         "embedded Tomcat; host on a laptop or any cloud with java -jar.", {"bold": True}),
+        ("Maven multi-module build replaces Ant; dependencies + versions are declarative.", {}),
+        ("Blanket javax.* → jakarta.* migration across the codebase.", {}),
+        ("The 4 EARs become 8 independently deployable services (see the target architecture).", {}),
+        ("Config is externalised (application.yml / env vars) instead of container-bound "
+         "descriptors — 12-factor friendly.", {}),
+    ],
+    footer="Outcome: a runnable-anywhere artifact on a supported runtime — the precondition for everything else.")
+
+# ── Gap 2 — EJB 2.x (with the primer folded in) ──────────────────────────────
+s = slide()
+title_bar(s, "Gap 2 — EJB 2.x is the entire backbone (primer + gap)",
+          "Enterprise JavaBeans: the J2EE server-side component model the whole app is built on", tag="gap")
+textbox(s, Inches(0.5), Inches(1.24), Inches(12.4), Inches(0.7),
+        [("EJB = Enterprise JavaBeans — the standard server-side component model of J2EE. A 'bean' is a "
+          "managed object the app server hosts; you write business logic and the container supplies "
+          "transactions, security, pooling, remoting, lifecycle and (for entity beans) persistence.",
+          {"size": 13, "color": NAVY})])
+# left: the three bean types the Pet Store uses
+textbox(s, Inches(0.5), Inches(2.15), Inches(6.35), Inches(0.34),
+        "The three bean types the Pet Store uses", size=15, color=BLUE, bold=True)
+bullets(s, Inches(0.5), Inches(2.55), Inches(6.35), Inches(2.2), [
+    ("Session beans — business logic. Stateful ShoppingCart; stateless SignOn, Catalog, "
+     "OPC/PurchaseOrder facades.", {"size": 13}),
+    ("Entity beans (CMP) — persistent rows the container maps to tables: Customer, Account, Profile, "
+     "PurchaseOrder, LineItem, Inventory, ContactInfo, CreditCard.", {"size": 13, "color": AMBER}),
+    ("Message-driven beans (MDB) — async JMS consumers: PurchaseOrderMDB, InvoiceMDB, "
+     "OrderApprovalMDB, Mail*MDB.", {"size": 13}),
+], gap=6)
+textbox(s, Inches(0.5), Inches(4.75), Inches(6.35), Inches(0.34),
+        "Why it blocks a straight port", size=15, color=RED, bold=True)
+bullets(s, Inches(0.5), Inches(5.15), Inches(6.35), Inches(2.1), [
+    ("Every bean needs an interface trio (Home + Remote/Local + Bean class) plus ejb-jar.xml / "
+     "sun-j2ee-ri.xml wiring — enormous boilerplate.", {"size": 12, "color": NAVY}),
+    ("Beans are located by JNDI via a ServiceLocator, not injected — you cannot unit-test without a "
+     "running container.", {"size": 12, "color": RED}),
+    ("CMP mappings + finder queries (EJB-QL) live in XML, tied to the dead container.", {"size": 12, "color": NAVY}),
+], gap=5)
+# right: modern mapping
+rect(s, Inches(7.05), Inches(2.15), Inches(5.85), Inches(5.05), LIGHT)
+textbox(s, Inches(7.28), Inches(2.28), Inches(5.4), Inches(0.4),
+        "Migration response — bean-by-bean mapping", size=14, color=GREEN, bold=True)
+bullets(s, Inches(7.28), Inches(2.8), Inches(5.4), Inches(4.2), [
+    ("Session bean → Spring @Service / @Component (constructor injection, no JNDI).", {"size": 13, "bold": True}),
+    ("Stateful ShoppingCart → session-scoped cart-lib component.", {"size": 12, "level": 1}),
+    ("Entity bean (CMP) → JPA @Entity + a Spring Data repository behind a domain port.", {"size": 13, "bold": True}),
+    ("EJB-QL finders → derived queries / @Query; mappings in annotations, not XML.", {"size": 12, "level": 1}),
+    ("Message-driven bean → @JmsListener method on a plain bean.", {"size": 13, "bold": True}),
+    ("Home/Remote/Local trios + ServiceLocator → deleted; DI wires collaborators.", {"size": 12, "level": 1}),
+    ("Result: plain testable Java — JUnit + Mockito, no container needed.", {"size": 13, "color": GREEN, "bold": True}),
+], gap=6)
+
+# ── Gap 3 — XML-over-JMS messages ────────────────────────────────────────────
+gap_slide(
+    3, "Inter-app messages are hand-marshalled XML over JMS",
+    "The apps only talk via JMS — and every payload is a verbose XML document",
+    legacy_pts=[
+        ("The 4 EARs are decoupled: they never call each other directly, they exchange JMS messages.",
+         {}),
+        ("Payloads are XML documents built by hand (the TPA — Trading Partner Agreement — schemas, "
+         "plus PurchaseOrder / Invoice / SupplierPO DTDs).", {}),
+        ("Checkout serialises a PurchaseOrder into XML and sends it to jms/PurchaseOrderQueue; the OPC "
+         "MDB parses the XML back into objects.", {}),
+        ("Every message type has bespoke marshal / unmarshal code and a matching DTD.", {}),
+    ],
+    problem_pts=[
+        ("Hand-rolled XML marshalling is brittle and verbose — a field rename means editing DTD, "
+         "marshaller and parser in lock-step.", {"color": RED}),
+        ("DTD-bound payloads are rigid: no forward compatibility, a new field can break older readers.",
+         {"color": RED}),
+        ("The wire format leaks into domain code — business classes know about XML structure.",
+         {"color": RED}),
+        ("XML parsing per message is CPU-heavy and hard to debug when a payload is malformed.",
+         {"color": RED}),
+    ],
+    response_pts=[
+        ("Model each message as a typed Java record wrapped in one shared event envelope "
+         "(petstore-messaging).", {"bold": True}),
+        ("Serialize as JSON via MappingJackson2MessageConverter; a _type header routes each JSON back "
+         "to the right record.", {}),
+        ("An Anti-Corruption Layer maps wire ⇄ domain, so the domain never sees the transport format.",
+         {}),
+        ("FAIL_ON_UNKNOWN_PROPERTIES=false → a newer producer's additive field can't poison an "
+         "older consumer.", {"color": GREEN}),
+        ("Golden-file tests freeze the legacy contract before the switch (full detail in the JMS "
+         "migration slide, §6).", {}),
+    ],
+    footer="This is the gap the brief called out explicitly — legacy JMS = XML; migrated JMS = JSON + ACL.")
+
+# ── Gap 4 — shared DB, duplicated tables ─────────────────────────────────────
+gap_slide(
+    4, "One shared Cloudscape DB, tables duplicated per EAR",
+    "No single owner of any entity — the same customer data is copied across apps",
+    legacy_pts=[
+        ("All 4 EARs read/write one shared Cloudscape database instance.", {}),
+        ("Common structures — ContactInfo, Address, CreditCard, LineItem — are redefined and stored "
+         "independently inside petstore, opc and supplier.", {}),
+        ("There is no authoritative owner: customer/account data physically lives in several schemas "
+         "at once.", {}),
+        ("CMP entity beans in different EARs map their own copies of overlapping tables.", {}),
+    ],
+    problem_pts=[
+        ("Shared schema = shared coupling: any table change ripples across every EAR at once.",
+         {"color": RED}),
+        ("Duplicated entities drift — the same 'customer' can disagree between apps, with no source "
+         "of truth.", {"color": RED}),
+        ("Impossible to scale, deploy or reason about a service in isolation when they all touch one "
+         "DB.", {"color": RED}),
+    ],
+    response_pts=[
+        ("Database-per-service: each service owns its schema and is the sole writer of its data.",
+         {"bold": True}),
+        ("auth-service is the single owner of credentials/accounts; customer-service owns "
+         "profile/address/card; OPC owns orders; inventory owns stock.", {}),
+        ("Cross-service data is fetched over typed client SDKs (HTTP), never by reaching into another "
+         "service's tables.", {}),
+        ("Each service uses file H2 by default (OPC + catalog also run on MongoDB) — swappable behind "
+         "a repository port.", {}),
+        ("A clear ownership boundary makes each service independently testable and deployable.",
+         {"color": GREEN}),
+    ],
+    footer="Bounded contexts replace one shared schema — the core of the service decomposition.")
+
+# ── Gap 5 — order status in 3 MDBs + WAF state machine ───────────────────────
+gap_slide(
+    5, "Order status mutated in 3 MDBs + the WAF state machine",
+    "No single authority for an order's lifecycle — status is written in several places",
+    legacy_pts=[
+        ("Order state advances as JMS messages ripple through separate MDBs "
+         "(PurchaseOrderMDB → OrderApprovalMDB → InvoiceMDB → mailer MDBs).", {}),
+        ("Each MDB independently writes the order/purchase-order status it cares about.", {}),
+        ("The Web Application Framework (WAF) adds its own screen-flow StateMachine / RequestProcessor "
+         "on the web tier.", {}),
+        ("The 'current status' of an order is therefore an emergent property of several beans.", {}),
+    ],
+    problem_pts=[
+        ("Status logic is smeared across multiple god-objects — no one class you can point at for "
+         "'what are the legal transitions?'.", {"color": RED}),
+        ("Concurrent messages can interleave and drive invalid transitions; nothing enforces the "
+         "state chart.", {"color": RED}),
+        ("The bespoke WAF framework is dead weight — a whole homegrown MVC engine to maintain.",
+         {"color": RED}),
+    ],
+    response_pts=[
+        ("One OrderStatusService is the single authority for lifecycle changes.", {"bold": True}),
+        ("Status is an explicit enum with guarded transitions (illegal transition → rejected), not "
+         "an emergent side effect.", {}),
+        ("applyStatusChange runs in one @Transactional unit; a @Version optimistic lock stops an "
+         "approve+deny race (→ 409).", {}),
+        ("The WAF screen flow is replaced by thin Spring MVC controllers + Thymeleaf.", {}),
+        ("Status announcements go out via the transactional outbox — commit and publish can't "
+         "diverge (§ walkthrough 5).", {"color": GREEN}),
+    ],
+    footer="Enum + guards was chosen over the full State pattern — right-sized for this lifecycle.")
+
+# ── Gap 6 — implicit container locking / oversell ────────────────────────────
+gap_slide(
+    6, "Concurrency safety left implicit to the EJB container",
+    "Take the container away and nothing stops two orders overselling the same stock",
+    legacy_pts=[
+        ("Inventory decrement relied on the EJB container's transaction + entity-bean locking to "
+         "serialise concurrent access.", {}),
+        ("There is no explicit lock or stock-floor check in the business code — it trusts the "
+         "container to prevent lost updates.", {}),
+        ("Fulfilment reads stock, decides, then decrements as separate steps within a "
+         "container-managed transaction.", {}),
+    ],
+    problem_pts=[
+        ("Once the container is gone, read-then-write is a classic race: two orders both read '5', "
+         "both decrement, stock goes negative (oversell).", {"color": RED}),
+        ("Nothing in the schema prevents a negative quantity.", {"color": RED}),
+        ("With JMS at-least-once delivery, a redelivered fulfilment could double-decrement.",
+         {"color": RED}),
+    ],
+    response_pts=[
+        ("Pessimistic row lock: findByIdForUpdate issues SELECT … FOR UPDATE so only one transaction "
+         "touches a stock row at a time.", {"bold": True}),
+        ("Check-and-decrement runs inside one @Transactional method.", {}),
+        ("A DB CHECK (quantity >= 0) constraint is the hard floor — the DB refuses to go negative.",
+         {}),
+        ("Idempotent consumer: a fulfilled_order dedup ledger means a redelivered order never "
+         "double-decrements.", {}),
+        ("Verified with a 20-thread test on 5 units → exactly 5 succeed, never negative; the rest "
+         "backorder (stay APPROVED).", {"color": GREEN}),
+    ],
+    footer="This was the one sanctioned technical fix — an explicit lock replacing an implicit one.")
+
+# ── Gap 7 — Swing / Java Web Start admin ─────────────────────────────────────
+gap_slide(
+    7, "The admin tool is a Swing / Java Web Start rich client",
+    "The back-office console is a desktop app launched from the browser — a dead delivery model",
+    legacy_pts=[
+        ("The admin application is a Swing GUI, delivered via Java Web Start (JNLP) and launched "
+         "from a browser link.", {}),
+        ("It talks to the OPC server over a remote EJB / XML-RPC channel to list, approve and deny "
+         "orders and view sales charts.", {}),
+        ("It is a separate rich-client codebase from the web storefront.", {}),
+    ],
+    problem_pts=[
+        ("Java Web Start was removed from the JDK after Java 8 — the launch mechanism no longer "
+         "exists.", {"color": RED}),
+        ("Browsers dropped the applet/JNLP plumbing entirely — nothing to click.", {"color": RED}),
+        ("A desktop Swing client is the wrong shape for a modern web-hosted, deploy-anywhere admin "
+         "surface.", {"color": RED}),
+    ],
+    response_pts=[
+        ("Admin becomes REST endpoints on admin-office-service (list / approve / deny / sales) that "
+         "delegate to OPC.", {"bold": True}),
+        ("A server-rendered Thymeleaf console replaces the Swing UI — same tasks, in the browser.",
+         {}),
+        ("admin-office-service owns no data — it is a thin console over the OPC facade (SDK).", {}),
+        ("Auth is unified: the admin logs in through the same central IdP (JWT) as everything else.",
+         {}),
+    ],
+    footer="Same operator tasks, delivered as a normal web app instead of a desktop download.")
+
+# ── Gap 8 — parallel SOAP webservices build ──────────────────────────────────
+gap_slide(
+    8, "A parallel SOAP 'webservices' build duplicates order logic",
+    "The sample ships two implementations of the supplier flow — JMS and SOAP",
+    legacy_pts=[
+        ("Pet Store 1.3.1 includes a webservices/ variant that re-implements the supplier purchase-"
+         "order exchange over SOAP/JAX-RPC instead of JMS.", {}),
+        ("It exists to demo J2EE web-services interoperability — the same business flow, a second "
+         "transport.", {}),
+        ("Two code paths, two sets of DTOs, for one conceptual operation.", {}),
+    ],
+    problem_pts=[
+        ("Maintaining two implementations of the same order logic doubles the surface with no "
+         "functional gain for this project.", {"color": RED}),
+        ("JAX-RPC / early SOAP stacks are themselves legacy and unsupported on the target runtime.",
+         {"color": RED}),
+        ("Keeping both would blur which path is authoritative.", {"color": RED}),
+    ],
+    response_pts=[
+        ("Dropped intentionally: the JMS build is kept as the single source of truth for the "
+         "order/supplier flow.", {"bold": True}),
+        ("This is a scope decision, recorded as an ADR — not an accidental omission.", {}),
+        ("If external SOAP interop were ever needed, it would be re-added as a thin adapter in front "
+         "of the same domain, not a parallel implementation.", {}),
+    ],
+    footer="A deliberate de-duplication — one flow, one implementation.")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 6 — MIGRATION STRATEGY & PRINCIPLES
