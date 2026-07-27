@@ -875,23 +875,32 @@ enh_slide(
 
 # ── E5 — optimistic lock ─────────────────────────────────────────────────────
 enh_slide(
-    5, "Optimistic locking on order status", "Concurrent approve + deny can no longer both win",
+    5, "Optimistic lock + lifecycle guard on order status",
+    "Concurrent approve+deny can't both win — and a done order can't be reversed",
     before_pts=[
         ("Nothing guarded two admins (or a double-click) acting on the same PENDING order at once.", {}),
-        ("A lost update could leave the order in an inconsistent state, or fire both an approval AND a "
-         "denial event.", {"color": RED}),
+        ("A lost update could leave the order inconsistent, or fire both an approval AND a denial event.",
+         {"color": RED}),
+        ("Direction was unguarded at the store: a stray writer could reverse a terminal order "
+         "(COMPLETED → APPROVED).", {"color": RED}),
     ],
     enh_pts=[
-        ("A @Version column on the order: the first writer commits, the second hits a stale version.",
-         {"bold": True}),
-        ("The stale write throws OptimisticLockingFailureException → mapped to HTTP 409 Conflict.", {}),
-        ("Preserved on MongoDB too (Spring Data version-guarded conditional update).", {}),
+        ("Concurrency: a @Version column — first writer commits, the second hits a stale version → "
+         "OptimisticLockingFailureException → HTTP 409.", {"bold": True}),
+        ("Direction: the PENDING→APPROVED→COMPLETED (and →DENIED) lifecycle is enforced INSIDE the store's "
+         "updateStatus — the chokepoint every writer passes through, not just the call sites.", {"bold": True}),
+        ("An illegal move (e.g. COMPLETED→APPROVED, or skipping APPROVED) → 409; a same-status write is an "
+         "idempotent no-op (JMS-redelivery safe).", {}),
+        ("On MongoDB, @Version is STILL required: updateStatus is a read-modify-write across two round "
+         "trips, so single-document atomicity alone does not stop the lost update.", {"color": GREEN}),
     ],
     why_pts=[
-        ("A clean, race-free order lifecycle without holding a DB lock across the whole request.", {}),
-        ("Cheap: one integer column + a mapped exception.", {"color": GREEN}),
+        ("A clean, race-free, one-directional order lifecycle without holding a DB lock across the request.",
+         {}),
+        ("Cheap: one integer column, a mapped exception, and a guard no future caller can bypass.",
+         {"color": GREEN}),
     ],
-    where="order-processing-service/.../repository/jpa/WarehouseOrderEntity.java (@Version)")
+    where="opc/.../repository/OrderStore.java (updateStatus guard) · jpa+mongo OrderStore · WarehouseOrderEntity (@Version)")
 
 # ── E6 — DLQ + redelivery ────────────────────────────────────────────────────
 enh_slide(
