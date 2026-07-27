@@ -1,11 +1,12 @@
 ---
 name: petstore-app-v1
-description: How to work in the petstore-app-v1 storefront module (:8080) of the migrated Java Pet Store. Use when changing the storefront UI, catalog browse/search pages, the shopping cart, checkout and its ship-to/bill-to address validation, sign-on / registration / account self-service, i18n (en/ja/zh) message bundles or Thymeleaf templates, the embedded Artemis broker host, or the checkout→PurchaseOrderQueue publish. Trigger terms include storefront, checkout, cart, add-to-cart, sign-on/login, register, preferredLanguage/locale, PurchaseOrderEvent, and com.petstore controllers/services/templates.
+description: How to work in the petstore-app-v1 storefront module (:8080) of the migrated Java Pet Store. Use when changing the storefront UI, catalog browse/search pages, the shopping cart, checkout and its ship-to/bill-to address validation, sign-on / registration / account self-service, i18n (en/ja/zh) message bundles or Thymeleaf templates, the Artemis broker client config, or the checkout→OPC REST intake. Trigger terms include storefront, checkout, cart, add-to-cart, sign-on/login, register, preferredLanguage/locale, order intake, and com.petstore controllers/services/templates.
 ---
 
 # petstore-app-v1 — storefront skill
 
-The :8080 HTML storefront and shared-broker host. Package root `com.petstore`, Spring Boot
+The :8080 HTML storefront (a broker CLIENT — the shared Artemis broker is a standalone
+container, not hosted here). Package root `com.petstore`, Spring Boot
 3.3.5 / Java 21, non-standard layout (`src/`, `test/`, `resources/`). For shared conventions
 (build/run scripts, JMS contract, hexagonal rules, auth, order workflow) use the repo
 **`petstore-dev`** skill — don't repeat it here.
@@ -21,8 +22,9 @@ Parity baseline: repo `docs/PARITY_AUDIT.md`; ADRs: repo `DECISIONS.md`.
   `customer/web/CustomerController`, `security/LoginController`.
 - **Services / logic:** `cart/service/CartService` (adapter over cart-lib), `order/service/OrderService`
   (builds + publishes the PO), `order/service/OrderIdGenerator`.
-- **Config:** `config/WebConfig` (i18n), `config/HttpClientConfig` (SDK beans), `config/ServiceEndpoints`,
-  `cart/config/CartConfig`, `order/messaging/EmbeddedBrokerConfig`, `security/SecurityConfig`.
+- **Config:** `config/WebConfig` (i18n), `config/HttpClientConfig` (SDK beans), `config/ResilientRestClient`,
+  `config/ServiceEndpoints`, `cart/config/CartConfig`, `security/SecurityConfig`. (Artemis is plain
+  client config in `application.yml` — no broker-server bean; the broker is a standalone container.)
 - **Templates:** `resources/templates/*.html` (Thymeleaf) + `fragments/nav.html`, `fragments/stepper.html`.
 - **i18n bundles:** `resources/messages.properties` + `_en` / `_ja` / `_zh`.
 
@@ -59,20 +61,25 @@ UI labels come from `messages_*.properties`. On sign-on, `SignOnLocaleSuccessHan
 customer's stored `preferredLanguage` — **but an explicit `?lang=` on the login request wins** (the
 handler returns early when the param is present). Preserve that precedence.
 
-### Checkout → JMS
-`OrderService.checkout(...)` builds a `PurchaseOrderEvent` (via `Events.meta(PurchaseOrderEvent.TYPE)`,
-`OrderIdGenerator.nextId()`, cart lines + total) and calls
-`publisher.publish(Destinations.PURCHASE_ORDER, event)` from `petstore-messaging`, then empties the
-cart. `shipTo`/`billTo` `ContactInfo` are populated on the event (nullable for the API path). Empty
-cart → `EmptyCartException`. Never construct `JmsTemplate` or destination strings by hand — use
-`MessagePublisher` + `Destinations`.
+### Checkout → OPC (synchronous REST intake)
+`OrderService.checkout(...)` builds a `CheckoutRequest` (`OrderIdGenerator.nextId()`, cart lines +
+total, `shipTo`/`billTo` — nullable for the API path) and calls
+`orderProcessing.checkout(request, bearer)` (the `order-processing-client` SDK → `POST /api/orders/intake`
+on OPC :8088), then empties the cart on success. The shopper's JWT is proxied so OPC authorizes the
+intake for the customer role. Empty cart → `EmptyCartException`; OPC unreachable →
+`OrderIntakeUnavailableException` (clean 503, cart left intact to retry — NOT emptied). This replaced the
+old fire-and-forget `PurchaseOrderEvent` publish to `PurchaseOrderQueue` (see root `DECISIONS.md`); the
+storefront no longer publishes to the broker.
 
 ## Hard rules (don't violate)
 
 - **Never persist orders here.** No JPA, no order table, no status/lookup endpoint. Build + publish
   only; order-processing-service (:8088) is the store. There is deliberately no JPA starter in `pom.xml`.
-- **Keep the broker embedded + TCP-open.** `application.yml` (`artemis.mode: embedded`) +
-  `EmbeddedBrokerConfig` (acceptor on `tcp://0.0.0.0:61616`); this app starts first in the fleet.
+- **This app is a broker CLIENT, not the host.** `application.yml` runs Artemis `mode: native` with
+  `embedded.enabled: false` and connects to `broker-url` (`${BROKER_URL:tcp://localhost:61616}`) — the
+  standalone container in the repo `docker-compose.yml`. Do NOT re-add an embedded broker server or a
+  TCP acceptor to production config. (Tests flip back to an in-VM embedded broker via
+  `test/resources/application.yml` so `mvn test` needs no running container.)
 - **Cart is cookie-scoped via cart-lib, not `@SessionScope` and not a remote service.** Resolve the id
   through `CartIdFilter`/`RequestContextHolder`; never key on username, never mint the id client-side.
 - **Auth is delegated** to auth-service; hold no credentials. Forward the JWT (the `Authentication`
@@ -84,7 +91,7 @@ cart → `EmptyCartException`. Never construct `JmsTemplate` or destination stri
 ```bash
 export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
 cd petstore-app-v1 && mvn -q clean package     # or: mvn -q test
-mvn spring-boot:run                            # :8080 + broker :61616
+mvn spring-boot:run                            # :8080 (connects to the broker container on :61616)
 ```
 
 Tests in `test/com/petstore/`: `OrderCharacterizationTest`, `CheckoutAddressTest`,

@@ -45,8 +45,8 @@ java -jar target/petstore-app-v1-1.0.0.jar
 
 Depends on the libs being in `~/.m2` first (`petstore-messaging`, `cart-lib`, and the
 `*-client` SDKs). Use the repo `./build-all.sh` (starts with the libs) or `./run-all.sh`
-(starts this broker-host **first**). Downstream services (catalog :8083, customer :8081,
-auth :8086) should be up for the UI to fully work.
+(brings up the standalone Artemis broker container **first**, then the services). Downstream
+services (catalog :8083, customer :8081, auth :8086, OPC :8088) should be up for the UI to fully work.
 
 ## Invariants (do NOT break)
 

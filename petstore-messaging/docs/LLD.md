@@ -1,7 +1,7 @@
 # petstore-messaging — Low-Level Design
 
 Shared **JMS contract library** for the migrated Pet Store. No port — it is imported, not run.
-It is the single source of truth for: destination names + kind, the event envelope, the four
+It is the single source of truth for: destination names + kind, the event envelope, the five
 event records, and the `_type` id → class map that keeps producers and consumers in lockstep.
 Package root `com.petstore.messaging`. Shared platform conventions live in the repo skill
 `../../.claude/skills/petstore-dev/SKILL.md`; architecture rationale in `../../DECISIONS.md`;
@@ -11,9 +11,9 @@ the legacy behavioural baseline in `../../docs/PARITY_AUDIT.md`.
 
 Three concerns, each one small type:
 
-1. **Where** — `Destinations` holds the four destination constants, each a `Destination`
-   record carrying its name and whether it is a topic (pub/sub) or a queue (point-to-point).
-2. **What** — `events/` holds the four event records; every event embeds an `EventMeta`
+1. **Where** — `Destinations` holds the five destination constants (2 queues + 3 topics), each a
+   `Destination` record carrying its name and whether it is a topic (pub/sub) or a queue (point-to-point).
+2. **What** — `events/` holds the five event records; every event embeds an `EventMeta`
    envelope built by the `Events` factory. Each event has a `TYPE` constant = its logical
    type = its JMS `_type` id.
 3. **How** — `MessagingConfig` is the one JMS config imported by every service: the
@@ -148,7 +148,15 @@ classDiagram
         +double totalPrice
     }
 
-    Destinations *-- Destination : four constants
+    class RestockEvent {
+        <<record>>
+        +String TYPE$ = "Restock"
+        +EventMeta meta
+        +String itemId
+        +int quantityAdded
+    }
+
+    Destinations *-- Destination : five constants
     Events ..> EventMeta : builds
     MessagePublisher ..> Destination : routes by topic()
     MessagePublisher ..> PurchaseOrderEvent : typeOf
@@ -158,6 +166,7 @@ classDiagram
     MessagingConfig ..> OrderApprovedEvent : TYPE_IDS
     MessagingConfig ..> InvoiceEvent : TYPE_IDS
     MessagingConfig ..> OrderStatusEvent : TYPE_IDS
+    MessagingConfig ..> RestockEvent : TYPE_IDS
     PurchaseOrderEvent *-- EventMeta
     PurchaseOrderEvent *-- PurchaseOrderEvent_Line
     PurchaseOrderEvent *-- PurchaseOrderEvent_ContactInfo
@@ -165,6 +174,7 @@ classDiagram
     OrderApprovedEvent *-- OrderApprovedEvent_Line
     InvoiceEvent *-- EventMeta
     OrderStatusEvent *-- EventMeta
+    RestockEvent *-- EventMeta
 ```
 
 Notes: `Destination`, `EventMeta` and every event are plain Java `record`s (no Spring/JPA
@@ -178,10 +188,11 @@ stamping rather than this helper — the converter always stamps from `TYPE_IDS`
 
 | Destination (name) | Kind | Event class (`TYPE` id) | Producer → Consumer(s) |
 |--------------------|------|-------------------------|------------------------|
-| `PurchaseOrderQueue` (`Destinations.PURCHASE_ORDER`) | queue (point-to-point) | `PurchaseOrderEvent` (`"PurchaseOrder"`) | storefront checkout (`petstore-app-v1`) → order-processing-service (persist + auto-approve) |
+| `PurchaseOrderQueue` (`Destinations.PURCHASE_ORDER`) | queue (point-to-point) | `PurchaseOrderEvent` (`"PurchaseOrder"`) | **alt** async intake → order-processing-service (persist + auto-approve). The live storefront checkout uses synchronous REST intake (`POST /api/orders/intake`) instead; OPC's `OrderListener` still consumes this queue |
 | `ApprovedOrderQueue` (`Destinations.APPROVED_ORDER`) | queue (point-to-point) | `OrderApprovedEvent` (`"OrderApproved"`) | order-processing-service (approval) → inventory-service (fulfil) |
 | `InvoiceTopic` (`Destinations.INVOICE`) | topic (pub/sub) | `InvoiceEvent` (`"Invoice"`) | inventory-service (ship/invoice) → order-processing-service (mark COMPLETED) **and** notification-service (email) |
 | `OrderStatusTopic` (`Destinations.ORDER_STATUS`) | topic (pub/sub) | `OrderStatusEvent` (`"OrderStatus"`) | order-processing-service (approve/deny/complete) → notification-service (status email) |
+| `RestockTopic` (`Destinations.RESTOCK`) | topic (pub/sub) | `RestockEvent` (`"Restock"`) | inventory-service (restock) → order-processing-service (re-drive APPROVED backorders, retry-on-restock H2) |
 
 Queues carry **commands** ("do this once", one consumer); topics carry **facts** ("this
 happened", fan-out to every subscriber). `InvoiceTopic`/`OrderStatusTopic` restore the legacy
@@ -204,7 +215,7 @@ serialises the event to a JSON `TextMessage` and writes the short `_type` id (e.
 header, looks up the target class in the same map, and deserialises to that record. Because
 producers and consumers share one `TYPE_IDS` map from this one library, they can never disagree
 on what a `_type` id means. `EventSerializationTest.typeIdMap_coversAllEvents` pins that the
-map contains all four types.
+map contains all five types.
 
 ## Sequence — generic publish → convert(`_type`) → deliver → consume
 

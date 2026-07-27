@@ -14,10 +14,11 @@ truth* for destination names, the event envelope + schema, and `_type` id routin
 ## Purpose & boundary
 
 - **Owns:** the JMS *contract* — destination names + kind (`Destinations`/`Destination`),
-  the envelope (`EventMeta` + `Events` factory), the four event records (`events/`), the
+  the envelope (`EventMeta` + `Events` factory), the five event records (`events/`), the
   `_type` id map + JSON converter + listener factories (`MessagingConfig`), and a thin
   transport-agnostic publisher (`MessagePublisher`).
-- **Does NOT own:** the broker (embedded Artemis lives in `petstore-app-v1` on `:61616`),
+- **Does NOT own:** the broker (the standalone Artemis container on `:61616` — see the repo
+  `docker-compose.yml`),
   the `ConnectionFactory` (Spring Boot autoconfigures it per importing service), or the
   after-commit publishing discipline (each service's *gateway* registers the
   `TransactionSynchronization` — this library only sends). No business logic lives here.
@@ -28,7 +29,7 @@ truth* for destination names, the event envelope + schema, and `_type` id routin
 src/com/petstore/messaging/
   Destination.java        record(name, boolean topic) + queue()/topic() factories
   Destinations.java       the ONE registry of names: PURCHASE_ORDER, APPROVED_ORDER (queues),
-                          INVOICE, ORDER_STATUS (topics)
+                          INVOICE, ORDER_STATUS, RESTOCK (topics)
   EventMeta.java          envelope record: eventId, type, occurredAt, correlationId
   Events.java             EventMeta factory: meta(type, correlationId) / meta(type) — the
                           one-arg form pulls the correlation id from the ambient Correlation MDC
@@ -43,6 +44,7 @@ src/com/petstore/messaging/
     OrderApprovedEvent.java   TYPE="OrderApproved"; nested record Line
     InvoiceEvent.java         TYPE="Invoice"
     OrderStatusEvent.java     TYPE="OrderStatus"
+    RestockEvent.java         TYPE="Restock"; inventory restock → OPC re-drives APPROVED backorders
 test/com/petstore/messaging/
   EventSerializationTest.java   wire-format contract test (round-trip + type-id map + kinds)
 ```

@@ -1,9 +1,10 @@
 # petstore-app-v1 — Low-Level Design
 
-The **:8080 storefront**: HTML shopping UI (browse → cart → checkout), sign-on/registration,
-account self-service, and the **host of the shared embedded Artemis broker** (`:61616`).
-Package root `com.petstore`; Spring Boot 3.3.5 / Java 21. See the repo `petstore-dev` skill for
-shared conventions and [`../CLAUDE.md`](../CLAUDE.md) for the invariant list.
+The **:8080 storefront**: HTML shopping UI (browse → cart → checkout), sign-on/registration, and
+account self-service. It is a **client** of the shared Artemis broker (`:61616`), which runs as a
+standalone container — the storefront does not host it. Package root `com.petstore`; Spring Boot
+3.3.5 / Java 21. See the repo `petstore-dev` skill for shared conventions and
+[`../CLAUDE.md`](../CLAUDE.md) for the invariant list.
 
 ## 1. Responsibilities
 
@@ -11,9 +12,10 @@ shared conventions and [`../CLAUDE.md`](../CLAUDE.md) for the invariant list.
   account edit — localised en/ja/zh.
 - Own the shopping cart lifecycle in-process via **cart-lib**, keyed by an anonymous cart-id cookie.
 - Delegate all domain data: catalog → catalog-service, customer → customer-service, auth → auth-service.
-- **Publish-only** for orders: build a `PurchaseOrderEvent` from the cart and publish it to
-  `PurchaseOrderQueue`; it persists **nothing** (the OPC on :8088 is the order store).
-- Host the embedded ActiveMQ Artemis broker (TCP acceptor) all services share.
+- **No order persistence:** checkout is a **synchronous REST intake** — build a `CheckoutRequest`
+  from the cart and `POST /api/orders/intake` to OPC (via `order-processing-client`); the storefront
+  stores **nothing** (the OPC on :8088 is the order store).
+- Connect to the shared standalone ActiveMQ Artemis broker as a **client** (no broker server here).
 
 ## 2. Class diagram
 
@@ -121,10 +123,10 @@ classDiagram
     }
     class OrderService {
         -CartService cart
-        -MessagePublisher publisher
+        -OrderProcessingClient orderProcessing
         -OrderIdGenerator ids
-        +checkout(userId, email, ContactInfo, ContactInfo) OrderPlaced
-        +checkout(userId, email) OrderPlaced
+        +checkout(bearer, userId, email, ContactInfo, ContactInfo) OrderPlaced
+        +checkout(bearer, orderId, userId, email, ContactInfo, ContactInfo) OrderPlaced
     }
     class OrderPlaced {
         +String orderId
@@ -153,9 +155,7 @@ classDiagram
         -List~String~ missingFields
     }
     class EmptyCartException
-    class EmbeddedBrokerConfig {
-        +customize(Configuration) void
-    }
+    class OrderIntakeUnavailableException
 
     %% ---- customer ----
     class CustomerController {
@@ -204,7 +204,7 @@ classDiagram
     class CatalogServiceClient
     class AuthClient
     class CartOperations
-    class MessagePublisher
+    class OrderProcessingClient
     class PurchaseOrderEvent
 
     OrderPlaced --* OrderService
@@ -235,9 +235,9 @@ classDiagram
     CartConfig ..> CatalogServiceClient
 
     OrderService ..> CartService
-    OrderService ..> MessagePublisher
+    OrderService ..> OrderProcessingClient : POST /api/orders/intake
     OrderService ..> OrderIdGenerator
-    OrderService ..> PurchaseOrderEvent
+    OrderService ..> PurchaseOrderEvent : ContactInfo type
 
     CustomerController ..> CustomerServiceClient
 
@@ -293,7 +293,7 @@ sequenceDiagram
     CartCtl-->>Shopper: JSON {itemId, qty, count}
 ```
 
-### 3.2 Checkout → publish PurchaseOrderEvent (with address validation)
+### 3.2 Checkout → synchronous REST intake to OPC (with address validation)
 
 ```mermaid
 sequenceDiagram
@@ -304,8 +304,8 @@ sequenceDiagram
     participant Form as ContactInfoForm
     participant OS as OrderService
     participant Cart as CartService
-    participant Pub as MessagePublisher
-    participant Q as PurchaseOrderQueue (Artemis)
+    participant OpcSDK as OrderProcessingClient
+    participant OPC as order-processing-service (:8088)
 
     Shopper->>SC: POST /checkout (shipTo.*, billTo.*) [authenticated]
     SC->>CustSDK: getCustomer(userId, JWT)
@@ -316,19 +316,26 @@ sequenceDiagram
         SC-->>Shopper: re-render checkout.html with error
     else all required present
         Form-->>SC: ok (blank optionals -> null)
-        SC->>OS: checkout(userId, email, shipTo.toContactInfo(), billTo.toContactInfo())
+        SC->>OS: checkout(bearer, userId, email, shipTo.toContactInfo(), billTo.toContactInfo())
         OS->>Cart: getItems()
         alt cart empty
             Cart-->>OS: []
             OS-->>SC: throw EmptyCartException
             SC-->>Shopper: checkout.html "cart is empty"
         else has items
-            OS->>OS: OrderIdGenerator.nextId(); build lines + total; locale=US
-            OS->>Pub: publish(PURCHASE_ORDER, PurchaseOrderEvent)
-            Pub->>Q: convertAndSend (_type=PurchaseOrder)
-            OS->>Cart: empty()
-            OS-->>SC: OrderPlaced(orderId, total)
-            SC-->>Shopper: order_complete.html (status=SUBMITTED)
+            OS->>OS: OrderIdGenerator.nextId(); build CheckoutRequest (lines + total; locale=US)
+            OS->>OpcSDK: checkout(request, bearer)
+            alt OPC reachable
+                OpcSDK->>OPC: POST /api/orders/intake (JWT proxied)
+                OPC-->>OpcSDK: CheckoutResponse(orderId)
+                OS->>Cart: empty()
+                OS-->>SC: OrderPlaced(orderId, total)
+                SC-->>Shopper: order_complete.html (status=SUBMITTED)
+            else OPC down / breaker open
+                OpcSDK-->>OS: RestClientException
+                OS-->>SC: throw OrderIntakeUnavailableException (cart NOT emptied)
+                SC-->>Shopper: 503 / retry notice
+            end
         end
     end
 ```
@@ -384,7 +391,7 @@ sequenceDiagram
 | GET | `/register-form` | `StorefrontController.registerForm` | public | captures returnUrl/Referer (L2) |
 | POST | `/register-form` | `StorefrontController.register` | public | → customer-service; return to origin |
 | GET | `/checkout` | `StorefrontController.checkoutPage` | **authenticated** | summary + saved address |
-| POST | `/checkout` | `StorefrontController.placeOrder` | **authenticated** | validate + publish PO |
+| POST | `/checkout` | `StorefrontController.placeOrder` | **authenticated** | validate + REST intake to OPC |
 | POST | `/api/checkout` | `CheckoutController.checkout` | permitAll* | JSON alt; `userId`/`email` params |
 | GET | `/customer` | `CustomerController.editForm` | **authenticated** | account edit form (M4) |
 | POST | `/customer` | `CustomerController.update` | **authenticated** | update account/profile/card |
@@ -394,11 +401,13 @@ falls through to `anyRequest().permitAll()`. CSRF is disabled for `/checkout`, `
 
 ## 5. Key design decisions & invariants
 
-- **Publish-only orders (legacy-faithful).** `OrderService` publishes `PurchaseOrderEvent` and
-  never persists. No JPA in `pom.xml`; order status/lookup is owned by the OPC. Do not add
-  persistence or status endpoints here. (See `DECISIONS.md`.)
-- **Broker host.** Artemis is embedded (`mode: embedded`, non-persistent) and `EmbeddedBrokerConfig`
-  opens `tcp://0.0.0.0:61616` so the fleet shares one broker. Start this app first.
+- **No order persistence (OPC owns the store).** `OrderService` does a synchronous REST intake
+  (`POST /api/orders/intake` on OPC via `order-processing-client`) and never persists. No JPA in
+  `pom.xml`; order status/lookup is owned by the OPC. Do not add persistence or status endpoints
+  here. OPC unreachable → `OrderIntakeUnavailableException` (clean 503, cart left intact). (See `DECISIONS.md`.)
+- **Broker client.** Artemis runs `mode: native` with `embedded.enabled: false`, connecting to the
+  standalone broker container on `${BROKER_URL:tcp://localhost:61616}`. No broker server is hosted
+  here; tests override to an in-VM embedded broker so `mvn test` needs no container.
 - **Cart identity = cookie, not HTTP session.** `CartIdFilter` mints an HttpOnly 128-bit SecureRandom
   `cartId` cookie; `CartService` resolves it per request and delegates to in-process cart-lib. Works
   for logged-out shoppers and survives login. Subtotal uses list price (`CartItem.unitCost` = list cost).

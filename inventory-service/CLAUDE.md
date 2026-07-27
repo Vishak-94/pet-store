@@ -120,8 +120,8 @@ cd inventory-service && mvn -q clean install     # builds+installs BOTH modules 
 The runnable jar is `app/target/inventory-service-1.0.0.jar`; the SDK is
 `client/target/inventory-service-client-1.0.0.jar`.
 
-Run needs the shared Artemis broker (hosted by `petstore-app-v1`) up on `:61616`; prefer
-`./run-all.sh` from the repo root. New tests go in `test/` and must not import legacy EJB types;
+Run needs the shared Artemis broker (standalone container, repo `docker-compose.yml`) up on
+`:61616`; prefer `./run-all.sh` from the repo root (it starts the broker container first). New tests go in `test/` and must not import legacy EJB types;
 pin the fulfilment decision (all-or-nothing) and the locked-reserve concurrency behaviour.
 
 ## See also

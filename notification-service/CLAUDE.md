@@ -51,9 +51,9 @@ mvn -q test          # test/ is present but currently has no tests
 ```
 
 `package` (not `install`) is enough — nothing depends on this module. Run it with
-`mvn spring-boot:run` or the repo `./run-all.sh` (start `petstore-app-v1` first: it hosts
-the embedded Artemis broker this service connects to). It is in `build-all.sh`'s leaf-app
-list.
+`mvn spring-boot:run` or the repo `./run-all.sh` (start the standalone Artemis broker
+container first — `docker compose up -d broker`, which `run-all.sh` does before any
+service). It is in `build-all.sh`'s leaf-app list.
 
 ## Events consumed (consumes only — see the JMS contract in the repo skill)
 

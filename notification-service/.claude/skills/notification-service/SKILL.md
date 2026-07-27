@@ -65,9 +65,9 @@ the shipped/status subjects.
 
 ```bash
 export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
-# needs petstore-messaging:1.0.0 in ~/.m2 (build-all.sh installs it; broker lives in petstore-app-v1)
+# needs petstore-messaging:1.0.0 in ~/.m2 (build-all.sh installs it; broker is a standalone container)
 cd notification-service && mvn -q clean package
-mvn spring-boot:run        # or the repo ./run-all.sh (start petstore-app-v1 first — it hosts the broker)
+mvn spring-boot:run        # or the repo ./run-all.sh (start the Artemis broker container first: docker compose up -d broker)
 ```
 
 Do not modify legacy `petstore1.3.1_02/` (read-only spec) or other modules. This module is

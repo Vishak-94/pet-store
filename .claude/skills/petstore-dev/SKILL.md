@@ -6,7 +6,7 @@ description: Conventions and how-to for developing the migrated Java Pet Store (
 # Pet Store — developer skill
 
 The migrated system is Java Pet Store (J2EE 1.3) re-implemented as **Spring Boot 3.3.5 on
-Java 21 (Corretto 21)** — 8 runnable services + an embedded Artemis broker + shared libraries.
+Java 21 (Corretto 21)** — 8 runnable services + a standalone ActiveMQ Artemis broker (container, `:61616`) + shared libraries.
 The guiding rule inherited from the migration is **parity first**: migrate *observable behaviour*,
 not code. New behaviour is a separate, tested change — never folded into a parity fix.
 
@@ -17,7 +17,7 @@ intent; never edit it.
 
 | Module | Port | Role | Sub-modules | Java package |
 |--------|------|------|-------------|--------------|
-| `petstore-app-v1` | 8080 | Storefront (browse/cart/checkout); **publish-only** for orders (no order persistence — legacy-faithful); hosts the embedded Artemis broker; i18n en/ja/zh | flat (`src`,`resources`,`test`) | `com.petstore` |
+| `petstore-app-v1` | 8080 | Storefront (browse/cart/checkout); no order persistence — checkout is a **synchronous REST intake** (`POST /api/orders/intake`) to OPC; broker CLIENT (not the host); i18n en/ja/zh | flat (`src`,`resources`,`test`) | `com.petstore` |
 | `customer-service` | 8081 | Customer domain data (profile/account/card); verify-only auth | `app` + `client` | `com.petstore.customer` |
 | `admin-office-service` | 8082 | Admin console; owns NO order data — **delegates to OPC** via `order-processing-client` | flat | `com.petstore.warehouse` |
 | `catalog-service` | 8083 | Catalog (category/product/item); locale-split tables | `app` + `client` | `com.petstore.catalog` |
@@ -43,7 +43,8 @@ Java 21 is required. Resolve it with `export JAVA_HOME="$(/usr/libexec/java_home
   `cd order-processing-service && mvn -q clean install`.
 - **One module:** `cd <module> && mvn -q clean package` (add `install` if other modules depend on it —
   i.e. anything with a `client` sub-module, plus `petstore-messaging`/`cart-lib`).
-- **Run the fleet:** `./run-all.sh` (starts the broker-host `petstore-app-v1` first, auto-detects Java 21),
+- **Run the fleet:** `./run-all.sh` (brings up the standalone Artemis broker container first via
+  `docker compose up -d broker`, then every service; auto-detects Java 21),
   `./stop-all.sh` to stop. `./generate-keys.sh` creates the RSA keypair (private key is gitignored).
 - **Verbose build output:** redirect to a temp file and tail/grep it — build logs are large.
 
@@ -61,13 +62,14 @@ Java 21 is required. Resolve it with `export JAVA_HOME="$(/usr/libexec/java_home
 
 ## JMS event contract (the backbone)
 
-Broker: Artemis on `:61616`, embedded in `petstore-app-v1`. All destination names live in
+Broker: Artemis on `:61616`, a standalone container (repo `docker-compose.yml`), started first by
+`run-all.sh`; every service connects to it as a client. All destination names live in
 `petstore-messaging/.../Destinations.java`; all event records in `.../events/`. The single type-id map
 is `MessagingConfig.TYPE_IDS` (`_type` header → class) — producers and consumers can never drift.
 
 | Destination | Kind | Event | Flow |
 |-------------|------|-------|------|
-| `PurchaseOrderQueue` | queue | `PurchaseOrderEvent` | storefront checkout → OPC (persist + approve) |
+| `PurchaseOrderQueue` | queue | `PurchaseOrderEvent` | **alt** async intake → OPC (persist + approve); the live storefront checkout uses synchronous REST intake instead, but OPC's `OrderListener` still consumes this queue |
 | `ApprovedOrderQueue` | queue | `OrderApprovedEvent` | OPC approval → inventory-service (fulfil) |
 | `InvoiceTopic` | topic | `InvoiceEvent` | inventory ship → OPC (COMPLETED) **and** notification (email) |
 | `OrderStatusTopic` | topic | `OrderStatusEvent` | OPC approve/deny/complete → notification (status email) |

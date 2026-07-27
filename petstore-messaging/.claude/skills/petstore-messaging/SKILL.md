@@ -16,13 +16,13 @@ contract section, parity rule) are in the repo skill `petstore-dev`
 
 ## What lives here
 
-- `Destinations` — the four `Destination` constants (`PURCHASE_ORDER`, `APPROVED_ORDER` are
-  queues; `INVOICE`, `ORDER_STATUS` are topics). `Destination(name, boolean topic)` with
+- `Destinations` — the five `Destination` constants (`PURCHASE_ORDER`, `APPROVED_ORDER` are
+  queues; `INVOICE`, `ORDER_STATUS`, `RESTOCK` are topics). `Destination(name, boolean topic)` with
   `queue()`/`topic()` factories.
 - `EventMeta` (envelope: `eventId`, `type`, `occurredAt`, `correlationId`) + `Events.meta(...)`
   factory.
 - `events/` — `PurchaseOrderEvent` (nested `Line`, `ContactInfo`), `OrderApprovedEvent`
-  (nested `Line`), `InvoiceEvent`, `OrderStatusEvent`; each has a `TYPE` constant.
+  (nested `Line`), `InvoiceEvent`, `OrderStatusEvent`, `RestockEvent`; each has a `TYPE` constant.
 - `MessagingConfig` — the ONE `@Configuration`: `TYPE_IDS` map, `jacksonJmsMessageConverter`,
   `queueFactory` (pubSub=false), `topicFactory` (pubSub=true).
 - `MessagePublisher` — thin `publish(Destination, event)`.
