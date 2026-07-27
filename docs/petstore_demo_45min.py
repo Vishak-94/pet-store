@@ -96,7 +96,10 @@ def textbox(s, x, y, w, h, lines, size=18, color=NAVY, bold=False,
 
 def title_bar(s, title, subtitle=None, tag=None):
     rect(s, 0, 0, SW, Inches(1.15), NAVY)
-    if tag:  # small amber "minute budget" chip on the right
+    # Drop pure time-budget chips ("2 min", "45 min", …); keep semantic tags.
+    if tag and tag.strip().lower().endswith("min"):
+        tag = None
+    if tag:  # small amber chip on the right
         rect(s, Inches(11.35), Inches(0.30), Inches(1.75), Inches(0.55), AMBER)
         textbox(s, Inches(11.35), Inches(0.30), Inches(1.75), Inches(0.55),
                 tag, size=13, color=WHITE, bold=True,
