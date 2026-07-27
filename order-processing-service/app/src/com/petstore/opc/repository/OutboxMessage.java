@@ -11,6 +11,11 @@ package com.petstore.opc.repository;
  * relay delivery is at-least-once, re-sending the frozen payload carries the same
  * id so consumers dedup the redelivery.
  *
+ * <p>The {@link #id} is a {@code String} so the port is store-agnostic: the JPA adapter
+ * maps its generated {@code Long} identity to/from this string at the boundary, and the
+ * MongoDB adapter uses the document {@code ObjectId}'s hex string directly. The relay only
+ * echoes the id back to {@code markPublished}/{@code recordFailure}, so it never interprets it.
+ *
  * @param id          outbox row id — {@code null} when enqueuing, populated on fetch
  * @param destination JMS destination name (e.g. {@code ApprovedOrderQueue})
  * @param topic       {@code true} = topic (pub/sub), {@code false} = queue (point-to-point)
@@ -19,7 +24,7 @@ package com.petstore.opc.repository;
  * @param orderId     the order this event is about (tracing / operational queries); may be null
  */
 public record OutboxMessage(
-        Long id,
+        String id,
         String destination,
         boolean topic,
         String eventType,

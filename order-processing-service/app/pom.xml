@@ -32,6 +32,14 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
+        <!-- MongoDB store — the `mongo` Spring profile swaps the authoritative order + outbox
+             store from file-based H2/JPA to MongoDB (single-node replica set rs0). Both adapters
+             sit behind the same OrderStore/OutboxStore ports; the active profile picks one. The
+             default (no profile / `h2`) keeps JPA + Flyway. See DECISIONS.md + MONGODB_SCHEMA.md. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-mongodb</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
@@ -87,7 +95,34 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Testcontainers MongoDB — the Mongo adapter integration tests boot a real mongo:7
+             container (single-node replica set) so store queries (sales aggregation, @Version
+             conflict, outbox drain) are exercised true-to-prod. Needs Docker/Colima available at
+             test time; the JPA (@DataJpaTest) tests stay fully in-VM and need no container. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mongodb</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Testcontainers BOM aligns the mongodb + junit-jupiter module versions. -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>1.20.4</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
         <sourceDirectory>${project.basedir}/src</sourceDirectory>

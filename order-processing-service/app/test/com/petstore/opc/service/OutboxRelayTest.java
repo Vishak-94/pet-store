@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -40,7 +41,7 @@ class OutboxRelayTest {
                 + "\"occurredAt\":\"2026-07-25T00:00:00Z\",\"correlationId\":null},"
                 + "\"orderId\":\"o1\",\"userId\":\"u\",\"emailId\":\"e@x.com\",\"locale\":\"en_US\","
                 + "\"lines\":[]}";
-        return new OutboxMessage(1L, Destinations.APPROVED_ORDER_NAME, false, OrderApprovedEvent.TYPE, json, "o1");
+        return new OutboxMessage("1", Destinations.APPROVED_ORDER_NAME, false, OrderApprovedEvent.TYPE, json, "o1");
     }
 
     private static OutboxMessage statusRow() {
@@ -48,7 +49,7 @@ class OutboxRelayTest {
                 + "\"occurredAt\":\"2026-07-25T00:00:00Z\",\"correlationId\":null},"
                 + "\"orderId\":\"o1\",\"userId\":\"u\",\"emailId\":\"e@x.com\","
                 + "\"status\":\"APPROVED\",\"totalPrice\":10.0}";
-        return new OutboxMessage(2L, Destinations.ORDER_STATUS_NAME, true, OrderStatusEvent.TYPE, json, "o1");
+        return new OutboxMessage("2", Destinations.ORDER_STATUS_NAME, true, OrderStatusEvent.TYPE, json, "o1");
     }
 
     @Test
@@ -62,8 +63,8 @@ class OutboxRelayTest {
         assertTrue(event.getValue() instanceof OrderApprovedEvent);
         assertEquals("o1", ((OrderApprovedEvent) event.getValue()).orderId());
         assertEquals("e1", ((OrderApprovedEvent) event.getValue()).meta().eventId());   // id preserved for dedup
-        verify(outbox).markPublished(1L);
-        verify(outbox, never()).recordFailure(anyInt());
+        verify(outbox).markPublished("1");
+        verify(outbox, never()).recordFailure(anyString());
     }
 
     @Test
@@ -76,19 +77,19 @@ class OutboxRelayTest {
         verify(publisher).publish(eq(Destinations.ORDER_STATUS), event.capture());
         assertTrue(event.getValue() instanceof OrderStatusEvent);
         assertEquals("APPROVED", ((OrderStatusEvent) event.getValue()).status());
-        verify(outbox).markPublished(2L);
+        verify(outbox).markPublished("2");
     }
 
     @Test
     void publishFailure_recordsFailure_doesNotMarkPublished() {
         when(outbox.fetchUnpublished(anyInt(), anyInt())).thenReturn(List.of(approvedRow()));
-        when(outbox.recordFailure(1L)).thenReturn(1);   // 1st failure, still under the cap
+        when(outbox.recordFailure("1")).thenReturn(1);   // 1st failure, still under the cap
         doThrow(new RuntimeException("broker down")).when(publisher).publish(any(), any());
 
         relay.publishPending();
 
-        verify(outbox).recordFailure(1L);
-        verify(outbox, never()).markPublished(anyInt());
+        verify(outbox).recordFailure("1");
+        verify(outbox, never()).markPublished(anyString());
     }
 
     @Test
@@ -98,13 +99,13 @@ class OutboxRelayTest {
         // recorded, never marked published. fetchUnpublished will now skip it on later polls.
         OutboxRelay relay = new OutboxRelay(outbox, publisher, 100, 3);
         when(outbox.fetchUnpublished(anyInt(), anyInt())).thenReturn(List.of(approvedRow()));
-        when(outbox.recordFailure(1L)).thenReturn(3);   // hit the cap on this attempt
+        when(outbox.recordFailure("1")).thenReturn(3);   // hit the cap on this attempt
         doThrow(new RuntimeException("still down")).when(publisher).publish(any(), any());
 
         relay.publishPending();
 
-        verify(outbox).recordFailure(1L);
-        verify(outbox, never()).markPublished(anyInt());
+        verify(outbox).recordFailure("1");
+        verify(outbox, never()).markPublished(anyString());
     }
 
     @Test
@@ -116,7 +117,7 @@ class OutboxRelayTest {
 
         relay.publishPending();
 
-        verify(outbox).recordFailure(1L);
-        verify(outbox).markPublished(2L);   // second row still delivered
+        verify(outbox).recordFailure("1");
+        verify(outbox).markPublished("2");   // second row still delivered
     }
 }

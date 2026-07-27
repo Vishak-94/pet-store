@@ -1,12 +1,11 @@
-package com.petstore.opc.repository.jpa;
+package com.petstore.opc.repository.mongo;
 
 import com.petstore.opc.repository.OutboxMessage;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
 
@@ -14,17 +13,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Verifies the outbox persistence port: enqueue, oldest-first draining of the
- * unpublished backlog, poison-row exclusion by attempt cap, and the two bulk state
- * updates (mark delivered / record failure). Schema comes from the Flyway V2 migration
- * (same as {@link JpaOrderStoreSalesTest} for V1).
+ * MongoDB counterpart of {@code JpaOutboxStoreTest}: the outbox persistence port over the
+ * {@code outbox} collection — enqueue, oldest-first draining of the unpublished backlog,
+ * poison-document exclusion by attempt cap, and the two state stamps (mark delivered / record
+ * failure). Same contract the relay depends on, verified against a real Mongo.
  */
-@DataJpaTest
-@Import(JpaOutboxStore.class)
-class JpaOutboxStoreTest {
+@DataMongoTest
+@Import(MongoOutboxStore.class)
+@ActiveProfiles("mongo")
+class MongoOutboxStoreTest extends MongoTestBase {
 
     @Autowired
-    JpaOutboxStore store;
+    MongoOutboxStore store;
 
     private static OutboxMessage msg(String orderId) {
         return OutboxMessage.pending("ApprovedOrderQueue", false, "OrderApproved",
@@ -61,22 +61,11 @@ class JpaOutboxStoreTest {
 
         store.markPublished(id);
 
-        assertTrue(store.fetchUnpublished(10, 10).isEmpty(), "published row must not be re-fetched");
+        assertTrue(store.fetchUnpublished(10, 10).isEmpty(), "published document must not be re-fetched");
     }
 
     @Test
-    @Transactional(propagation = Propagation.NEVER)   // like the relay: no ambient txn — the @Modifying update must supply its own
-    void markPublished_worksWithoutAmbientTransaction() {
-        store.enqueue(msg("o1"));
-        String id = store.fetchUnpublished(10, 10).get(0).id();
-
-        store.markPublished(id);   // would throw TransactionRequiredException if not self-transactional
-
-        assertTrue(store.fetchUnpublished(10, 10).isEmpty());
-    }
-
-    @Test
-    void recordFailure_parksRowOnceAttemptsReachCap() {
+    void recordFailure_parksDocumentOnceAttemptsReachCap() {
         store.enqueue(msg("o1"));
         String id = store.fetchUnpublished(10, 2).get(0).id();
 

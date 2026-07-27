@@ -25,12 +25,12 @@ public interface OutboxStore {
     List<OutboxMessage> fetchUnpublished(int limit, int maxAttempts);
 
     /** Mark a message delivered (stamp {@code published_at}). */
-    void markPublished(long id);
+    void markPublished(String id);
 
     /**
      * Record a failed publish attempt (increment the attempt counter) without publishing,
      * and return the row's <em>new</em> attempt count. The relay uses it to detect the poll
      * on which a row reaches the park threshold, so it can log that once (not on every retry).
      */
-    int recordFailure(long id);
+    int recordFailure(String id);
 }

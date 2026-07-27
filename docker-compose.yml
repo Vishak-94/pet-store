@@ -70,7 +70,64 @@ services:
       timeout: 3s
       retries: 20
 
+  # ── MongoDB (order-aggregate store for the OPC MongoDB track) ──────────────────
+  # Runs as a SINGLE-NODE REPLICA SET (`--replSet rs0`), not a standalone, on purpose:
+  # change streams and multi-document transactions — the two things the planned
+  # OPC outbox-via-change-stream design relies on — are ONLY available on a replica
+  # set (they are built on the oplog, which a standalone mongod does not keep).
+  #
+  # Host port is 27018 (NOT the default 27017) because a local Homebrew `mongod`
+  # is already listening on 27017 on this machine — mapping to 27017 would clash.
+  #
+  # Connecting to it:
+  #   - from INSIDE the compose network (e.g. mongo-express): `mongodb://mongo:27017`
+  #     — normal replica-set discovery works, the member advertises itself as `mongo:27017`.
+  #   - from the HOST (e.g. a Spring app, mongosh, Compass): use
+  #     `mongodb://localhost:27018/?directConnection=true`. directConnection is required
+  #     because the replica set advertises the internal member name `mongo:27017`, which the
+  #     host cannot resolve; directConnection skips topology discovery and dials the node directly.
+  mongo:
+    image: mongo:7.0
+    container_name: petstore-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27018:27017"   # host:container — 27018 avoids the local Homebrew mongod on 27017
+    volumes:
+      - petstore-mongo-data:/data/db
+    healthcheck:
+      # Idempotently self-initiate the one-member replica set on first boot: rs.status()
+      # throws (code 94, NotYetInitialized) until initiated, so we initiate on that failure.
+      # Once initiated the volume persists the config, so later boots just pass rs.status().
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'try { rs.status() } catch (e) { rs.initiate({_id:\"rs0\",members:[{_id:0,host:\"mongo:27017\"}]}) }' | grep -q .  || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # ── mongo-express: browser UI to VIEW and EDIT the order documents ─────────────
+  # Connects to `mongo` over the compose network; you open it in a browser to browse
+  # databases → collections → documents and create/edit/delete inline.
+  #
+  # Host port is 8971 (NOT its default 8081) because customer-service already owns :8081.
+  # Login is the mongo-express default basic-auth: admin / pass (local demo only).
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: petstore-mongo-express
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "8971:8081"   # host:container — 8971 avoids customer-service :8081
+    environment:
+      ME_CONFIG_MONGODB_URL: "mongodb://mongo:27017/?replicaSet=rs0"
+      ME_CONFIG_BASICAUTH_USERNAME: "admin"
+      ME_CONFIG_BASICAUTH_PASSWORD: "pass"
+    restart: unless-stopped
+
 # 4b: named volume — its lifecycle is independent of the container, so `docker compose
 # restart`/`down` (without -v) keeps the message journal. Remove with `docker compose down -v`.
 volumes:
   petstore-broker-data:
+  # Holds the MongoDB data files + replica-set config so orders (and the rs0 init)
+  # survive `docker compose down`. Removed only by `docker compose down -v`.
+  petstore-mongo-data:

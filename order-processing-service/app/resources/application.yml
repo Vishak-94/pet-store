@@ -1,24 +1,14 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared config (all profiles). The PERSISTENCE store is profile-selectable:
+#   • default / no profile (or `h2`) → file-based H2 + JPA + Flyway  (unchanged)
+#   • `mongo`                        → MongoDB (single-node replica set rs0)
+# Both sit behind the OrderStore/OutboxStore ports; the active profile picks the
+# adapter beans (see repository.jpa vs repository.mongo, gated by @Profile).
+# Run Mongo with:  SPRING_PROFILES_ACTIVE=mongo   (or --spring.profiles.active=mongo)
+# ─────────────────────────────────────────────────────────────────────────────
 spring:
   application:
     name: order-processing-service
-  datasource:
-    # File-based H2 so the authoritative order store SURVIVES restarts (was jdbc:h2:mem,
-    # which wiped every order on shutdown). AUTO_SERVER lets the H2 console / a second
-    # JVM connect to the same file. Path is overridable per env via OPC_DB_PATH.
-    url: jdbc:h2:file:${OPC_DB_PATH:./data/opc};AUTO_SERVER=TRUE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
-  jpa:
-    hibernate:
-      # Schema is owned by Flyway migrations (below), not Hibernate — keep this 'none'.
-      ddl-auto: none
-    show-sql: false
-  # Versioned schema via Flyway (db/migration/V*.sql). Replaces the old spring.sql.init
-  # bootstrap so schema changes are tracked in a migration history table.
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
   # Connect to the SHARED broker hosted by petstore-app-v1 (:61616).
   # Consumes PurchaseOrderQueue + InvoiceTopic; publishes ApprovedOrderQueue.
   artemis:
@@ -46,3 +36,60 @@ management:
 logging:
   level:
     com.petstore: INFO
+
+# ─────────────────────────────────────────────────────────────────────────────
+# H2 store (DEFAULT — active whenever the `mongo` profile is NOT active). Keeps the
+# exact prior behaviour: file-based H2, JPA, Flyway-owned schema. Mongo autoconfig is
+# excluded so the mongo starter on the classpath doesn't try to connect at startup.
+# ─────────────────────────────────────────────────────────────────────────────
+---
+spring:
+  config:
+    activate:
+      on-profile: "!mongo"
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoRepositoriesAutoConfiguration
+  datasource:
+    # File-based H2 so the authoritative order store SURVIVES restarts (was jdbc:h2:mem,
+    # which wiped every order on shutdown). AUTO_SERVER lets the H2 console / a second
+    # JVM connect to the same file. Path is overridable per env via OPC_DB_PATH.
+    url: jdbc:h2:file:${OPC_DB_PATH:./data/opc};AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      # Schema is owned by Flyway migrations (below), not Hibernate — keep this 'none'.
+      ddl-auto: none
+    show-sql: false
+  # Versioned schema via Flyway (db/migration/V*.sql). Replaces the old spring.sql.init
+  # bootstrap so schema changes are tracked in a migration history table.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MongoDB store (`mongo` profile). Single-node replica set rs0 — required for the
+# multi-document transaction (outbox insert + order status write commit together)
+# and change streams. JPA/DataSource/Flyway autoconfig is excluded so no H2 file or
+# migration runs. Schema validators + indexes are applied by MongoSchemaConfig.
+# ─────────────────────────────────────────────────────────────────────────────
+---
+spring:
+  config:
+    activate:
+      on-profile: mongo
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+  data:
+    mongodb:
+      # Single-node replica set rs0 (directConnection so the driver doesn't try to
+      # discover other members). DB name `petstore`. Overridable per env.
+      uri: ${OPC_MONGODB_URI:mongodb://localhost:27018/petstore?directConnection=true}

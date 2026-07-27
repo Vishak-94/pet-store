@@ -2,6 +2,7 @@ package com.petstore.opc.repository.jpa;
 
 import com.petstore.opc.repository.OutboxMessage;
 import com.petstore.opc.repository.OutboxStore;
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,8 +15,12 @@ import java.util.List;
  * transactional outbox. Maps between the framework-free {@link OutboxMessage} and
  * {@link OutboxEntity} and delegates to {@link OutboxJpaRepository}, so the service
  * layer never sees JPA (mirrors {@link JpaOrderStore}).
+ *
+ * <p>Active on the <b>default</b> profile only ({@code @Profile("!mongo")}); the
+ * {@code mongo} profile supplies a MongoDB {@link OutboxStore} instead.
  */
 @Repository
+@Profile("!mongo")
 public class JpaOutboxStore implements OutboxStore {
 
     private final OutboxJpaRepository jpa;
@@ -48,23 +53,25 @@ public class JpaOutboxStore implements OutboxStore {
 
     // The relay calls these outside any ambient transaction, and @Modifying JPQL updates
     // need one — so each stamp is its own short transaction (rows are updated independently).
+    // The port id is a String (store-agnostic); the JPA identity is a Long, so parse at the boundary.
     @Override
     @Transactional
-    public void markPublished(long id) {
-        jpa.markPublished(id, Instant.now());
+    public void markPublished(String id) {
+        jpa.markPublished(Long.parseLong(id), Instant.now());
     }
 
     @Override
     @Transactional
-    public int recordFailure(long id) {
-        jpa.incrementAttempts(id);
+    public int recordFailure(String id) {
+        long rowId = Long.parseLong(id);
+        jpa.incrementAttempts(rowId);
         // Re-read the freshly-incremented counter so the relay can tell when this row has just
         // reached its park threshold. clearAutomatically on the @Modifying update evicts any stale
         // cached entity, so this findById sees the committed value.
-        return jpa.findById(id).map(e -> e.attempts).orElse(0);
+        return jpa.findById(rowId).map(e -> e.attempts).orElse(0);
     }
 
     private OutboxMessage toMessage(OutboxEntity e) {
-        return new OutboxMessage(e.id, e.destination, e.topic, e.eventType, e.payload, e.orderId);
+        return new OutboxMessage(String.valueOf(e.id), e.destination, e.topic, e.eventType, e.payload, e.orderId);
     }
 }

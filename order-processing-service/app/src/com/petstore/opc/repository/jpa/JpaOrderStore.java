@@ -7,6 +7,7 @@ import com.petstore.opc.domain.SalesReport;
 import com.petstore.opc.domain.SalesReport.SalesBucket;
 import com.petstore.opc.domain.WarehouseOrder;
 import com.petstore.opc.repository.OrderStore;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -22,8 +23,13 @@ import java.util.Optional;
  * persistence stays swappable behind the port. Delegates all queries — status lookup,
  * status filter, newest-first listing, and the GROUP BY sales aggregation — to
  * {@link WarehouseOrderJpaRepository}.
+ *
+ * <p>Active on the <b>default</b> profile only ({@code @Profile("!mongo")}); under the
+ * {@code mongo} profile the {@code repository.mongo} adapters implement the same ports instead,
+ * so exactly one {@link OrderStore} bean exists per profile.
  */
 @Repository
+@Profile("!mongo")
 public class JpaOrderStore implements OrderStore {
 
     private final WarehouseOrderJpaRepository jpa;
