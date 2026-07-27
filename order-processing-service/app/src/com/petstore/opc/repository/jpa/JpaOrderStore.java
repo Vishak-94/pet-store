@@ -71,8 +71,18 @@ public class JpaOrderStore implements OrderStore {
     @Override
     public void updateStatus(String orderId, OrderStatus status) {
         jpa.findById(orderId).ifPresent(e -> {
-            e.status = status;
-            jpa.save(e);
+            // Chokepoint lifecycle guard: enforce the OrderStatus workflow here, not just at the
+            // service call sites, so no writer can ever reverse a terminal order (e.g. COMPLETED →
+            // APPROVED). A same-status write is an idempotent no-op (safe under JMS redelivery); any
+            // other move must be legal per OrderStatus.canGoTo, else IllegalStateException → 409.
+            if (e.status != status) {
+                if (!e.status.canGoTo(status)) {
+                    throw new IllegalStateException(
+                            "Illegal transition " + e.status + " -> " + status + " for " + orderId);
+                }
+                e.status = status;
+                jpa.save(e);
+            }
         });
     }
 

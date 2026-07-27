@@ -16,6 +16,12 @@ public interface OrderStore {
 
     Optional<WarehouseOrder> findById(String orderId);
 
+    /**
+     * Move an order to {@code status}, enforcing the {@link OrderStatus} lifecycle at the store
+     * chokepoint: a terminal order can never be reversed (e.g. COMPLETED → APPROVED). A same-status
+     * write is an idempotent no-op; any other transition must satisfy {@link OrderStatus#canGoTo},
+     * otherwise an {@link IllegalStateException} is thrown (surfaced as 409). No-op if no such order.
+     */
     void updateStatus(String orderId, OrderStatus status);
 
     Optional<OrderStatus> statusOf(String orderId);

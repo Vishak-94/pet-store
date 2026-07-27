@@ -70,8 +70,17 @@ public class MongoOrderStore implements OrderStore {
         // Load → mutate → save (not a blind $set) so the @Version guard turns a conflicting
         // concurrent transition into an OptimisticLockingFailureException, exactly as under JPA.
         repo.findById(orderId).ifPresent(d -> {
-            d.status = status;
-            repo.save(d);
+            // Chokepoint lifecycle guard (same rule as the JPA store): a terminal order can never
+            // be reversed (e.g. COMPLETED → APPROVED). Same-status write is an idempotent no-op;
+            // any other illegal move → IllegalStateException → 409.
+            if (d.status != status) {
+                if (!d.status.canGoTo(status)) {
+                    throw new IllegalStateException(
+                            "Illegal transition " + d.status + " -> " + status + " for " + orderId);
+                }
+                d.status = status;
+                repo.save(d);
+            }
         });
     }
 
