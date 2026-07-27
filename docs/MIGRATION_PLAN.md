@@ -7,6 +7,13 @@ Keep JMS. SOLID + patterns (ask when unsure). Legacy tree is read-only reference
 Defaults applied for OPEN items (revisable): Strangler Fig · modular monolith ·
 embedded Artemis broker · Catalog slice first.
 
+> **As-built note (this is the original plan, not the final state).** Two of the revisable
+> defaults above changed during execution: the modular monolith was decomposed into **8
+> independent services** along the legacy `.ear` seams, and the Artemis broker became a
+> **standalone container** (`:61616`, in `docker-compose.yml`) rather than embedded. For the
+> current topology see [`ARCHITECTURE.md`](ARCHITECTURE.md); for the rationale see
+> [`../DECISIONS.md`](../DECISIONS.md).
+
 ---
 
 ## 1. Principles & constraints (recap)

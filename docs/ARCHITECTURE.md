@@ -25,9 +25,9 @@ that service owns: **SQL** = file-based H2 (survives restart), **none** = holds 
                                      ▼                        ▼               ▼
    ┌──────────────────────────────────────────┐   ┌───────────────────┐  ┌────────────────────────┐
    │ petstore-app-v1  (Storefront)   :8080     │   │ admin-office      │  │ inventory-service      │
-   │ clients:[auth, catalog, customer]         │   │  -service  :8082  │  │              :8085     │
+   │ clients:[auth,catalog,customer,opc,inv]   │   │  -service  :8082  │  │              :8085     │
    │ embeds: cart-lib   uses: petstore-messaging│  │ clients:[auth, opc]│  │ clients:[auth]         │
-   │ DB: none (publish-only — no order store)  │   │ DB: none (delegates)│ │ uses: petstore-messaging│
+   │ DB: none (checkout → REST intake to OPC)  │   │ DB: none (delegates)│ │ uses: petstore-messaging│
    └───┬───────────┬───────────┬───────────────┘   └───┬───────────┬───┘  │ DB: SQL (h2 inventory) │
        │auth       │catalog    │customer               │auth       │opc    └───────┬────────────────┘
        │:8086      │:8083      │:8081                   │:8086      │:8088          │auth :8086
@@ -55,7 +55,7 @@ that service owns: **SQL** = file-based H2 (survives restart), **none** = holds 
 
 | Service (port) | Imported client SDKs | Talks HTTP to | Persistence |
 |---|---|---|---|
-| **petstore-app-v1** (8080) | `[auth-client, catalog-service-client, customer-service-client]` + embeds `cart-lib` | auth :8086, catalog :8083, customer :8081 | **none** — publish-only, no order DB |
+| **petstore-app-v1** (8080) | `[auth-client, catalog-service-client, customer-service-client, order-processing-client, inventory-service-client]` + embeds `cart-lib` | auth :8086, catalog :8083, customer :8081, OPC :8088 (checkout intake), inventory :8085 (stock badge) | **none** — no order DB (checkout is a synchronous REST intake to OPC) |
 | **auth-service** (8086) | `[-]` (imports own `auth-client` for DTOs only) | — (leaf IdP) | **SQL** — file H2 `auth` (credentials/accounts) |
 | **catalog-service** (8083) | `[-]` (imports own client for DTOs only) | — (leaf) | **SQL** — file H2 `catalog` (locale-split product data) |
 | **customer-service** (8081) | `[auth-client]` + own client DTOs | auth :8086 | **SQL** — file H2 `customer` (PII/profile/card) |
@@ -72,7 +72,7 @@ that service owns: **SQL** = file-based H2 (survives restart), **none** = holds 
 
 ---
 
-## 2. Messaging topology — one broker, 4 business destinations + 2 safety nets
+## 2. Messaging topology — one broker, 5 business destinations + 2 safety nets
 
 All async traffic flows through **one** standalone ActiveMQ Artemis broker (`:61616`, hosted
 as a container — see `docker-compose.yml`; started first by `run-all.sh`). Destination names
@@ -82,12 +82,19 @@ service hardcodes a queue name.
 **Queue** = point-to-point, exactly one consumer processes each message.
 **Topic** = pub/sub, every subscribed consumer gets its own copy.
 
+> **Checkout is synchronous REST, not JMS.** The storefront places an order via
+> `POST /api/orders/intake` on OPC (through `order-processing-client`), so the shopper gets an
+> immediate success/failure. The legacy `PurchaseOrderQueue` path is preserved (OPC's
+> `OrderListener` still consumes it) as an alternate async intake, but it is not the live
+> checkout path. Everything downstream of intake (approval → fulfilment → invoice → email)
+> stays asynchronous over the broker below.
+
 ```
                          ┌──────────────────────────────────────────────────────┐
                          │        ActiveMQ Artemis broker  (:61616)              │
                          │                                                        │
-  petstore-app-v1  ────▶ │  ▣ PurchaseOrderQueue   (queue)  ───▶  order-processing │
-  OrderService.checkout  │                                        (OrderListener)  │
+  (alt intake path) ───▶ │  ▣ PurchaseOrderQueue   (queue)  ───▶  order-processing │
+                         │                                        (OrderListener)  │
                          │                                                        │
   order-processing  ───▶ │  ▣ ApprovedOrderQueue   (queue)  ───▶  inventory-service│
   OutboxRelay(Approval)  │                                     (OrderApprovedListener)
@@ -100,6 +107,9 @@ service hardcodes a queue name.
   order-processing  ───▶ │  ◈ OrderStatusTopic     (topic)  ───▶  notification-svc │
   OutboxRelay(Status)    │                                    (OrderStatusNotificationListener → email)
                          │                                                        │
+  inventory-service ───▶ │  ◈ RestockTopic         (topic)  ───▶  order-processing │
+  RestockService(restock)│                                    (RestockListener → re-drive backorders)
+                         │                                                        │
                          │  ─ safety nets ─────────────────────────────────────  │
                          │  ▣ DLQ          (queue)  ───▶ notification (DlqListener, ERROR log)
                          │  ▣ ExpiryQueue  (queue)  ───▶ notification (DlqListener, ERROR log)
@@ -111,17 +121,18 @@ service hardcodes a queue name.
 
 | Destination | Kind | Producer | Consumer(s) | Payload |
 |---|---|---|---|---|
-| **PurchaseOrderQueue** | queue | petstore-app-v1 (`OrderService.checkout`) | order-processing (`OrderListener`) | `PurchaseOrderEvent` |
+| **PurchaseOrderQueue** | queue | *(alt path)* a JMS producer of `PurchaseOrderEvent` — the live storefront uses REST intead | order-processing (`OrderListener`) | `PurchaseOrderEvent` |
 | **ApprovedOrderQueue** | queue | order-processing (`OutboxRelay` ← `ApprovalGateway`) | inventory-service (`OrderApprovedListener`) | `OrderApprovedEvent` |
 | **InvoiceTopic** | topic | inventory-service (`OrderApprovedListener`) | order-processing (`InvoiceListener` → COMPLETED) **and** notification (`InvoiceNotificationListener` → email) | `InvoiceEvent` |
 | **OrderStatusTopic** | topic | order-processing (`OutboxRelay` ← `OrderStatusGateway`) | notification (`OrderStatusNotificationListener` → email) | `OrderStatusEvent` |
+| **RestockTopic** | topic | inventory-service (`RestockService` on restock) | order-processing (`RestockListener` → re-drive APPROVED backorders) | `RestockEvent` |
 | **DLQ** | queue | broker (after 3 failed deliveries) | notification (`DlqListener`, ERROR log) | any (raw `jakarta.jms.Message`) |
 | **ExpiryQueue** | queue | broker (expired messages) | notification (`DlqListener`, ERROR log) | any (raw `jakarta.jms.Message`) |
 
 > **Why `InvoiceTopic` is a topic, not a queue:** the invoice fans out to **two** independent
 > consumers — OPC (to flip the order to COMPLETED) and notification (to email the customer).
-> A queue would deliver to only one. `OrderStatusTopic` is a topic for the same fan-out reason
-> even though today it has a single subscriber.
+> A queue would deliver to only one. `OrderStatusTopic` and `RestockTopic` are topics for the
+> same fan-out reason even though today each has a single subscriber.
 
 ### 2.2 Reliability model (post-hardening)
 
@@ -131,8 +142,9 @@ service hardcodes a queue name.
 - **Broker side:** redelivery with exponential back-off (`~1s → ~2s`), **max 3 attempts**, then
   the message is routed to the **DLQ**. `notification-service`'s `DlqListener` turns any
   quarantined message into an operator-visible ERROR (it also owns `ExpiryQueue`).
-- **Consumer side:** **idempotent** consumers (inventory keeps a durable `processed_event`
-  ledger; OPC owns terminal state) so at-least-once redelivery can't double-apply.
+- **Consumer side:** **idempotent** consumers (inventory keeps a durable `fulfilled_order`
+  ledger keyed by `order_id`; OPC owns terminal state and its `updateStatus` chokepoint blocks
+  illegal/duplicate transitions) so at-least-once redelivery can't double-apply.
 
 ---
 
@@ -142,10 +154,10 @@ service hardcodes a queue name.
  shopper                storefront        broker            OPC              inventory        notification
    │  browse/cart/checkout │                │               │                  │                  │
    │──────────────────────▶│                │               │                  │                  │
-   │                        │ PurchaseOrder  │               │                  │                  │
-   │                        │───────────────▶│ (queue)       │                  │                  │
-   │                        │                │──────────────▶│ persist PENDING  │                  │
-   │  admin approves (:8082 → OPC :8088)     │               │ APPROVED         │                  │
+   │                        │ POST /api/orders/intake (REST, synchronous)      │                  │
+   │                        │──────────────────────────────▶│ persist PENDING  │                  │
+   │                        │◀── 201 orderId ───────────────│ (auto-approve if  │                  │
+   │  admin approves (:8082 → OPC :8088)     │               │  under threshold) │                  │
    │                        │                │  ApprovedOrder │──(outbox)───────▶│ (queue)          │
    │                        │                │◀──────────────│                  │──▶ reserve stock  │
    │                        │                │  InvoiceTopic  │                  │  all-or-nothing   │
