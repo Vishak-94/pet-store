@@ -270,6 +270,35 @@ def service_slide(name, port, legacy_origin, accent, responsibilities,
     return s
 
 
+def enh_slide(num, title_txt, subtitle, before_pts, enh_pts, why_pts, where=None):
+    """One detailed slide per enhancement (net improvement over BOTH legacy and a naive port).
+       Left = the risk/limitation before (red) + why it matters (navy);
+       right green panel = the enhancement we added; footer = where it lives in code."""
+    s = slide()
+    title_bar(s, f"Enhancement {num} — {title_txt}", subtitle, tag="enhancement")
+    LW = Inches(6.35)
+    textbox(s, Inches(0.5), Inches(1.26), LW, Inches(0.34),
+            "Before — legacy / a naive port", size=15, color=RED, bold=True)
+    bullets(s, Inches(0.5), Inches(1.66), LW, Inches(2.6),
+            [(t, {**o, "size": o.get("size", 13), "color": o.get("color", NAVY)}) for t, o in
+             ((p if isinstance(p, tuple) else (p, {})) for p in before_pts)], size=13, gap=5)
+    textbox(s, Inches(0.5), Inches(4.42), LW, Inches(0.34),
+            "Why it matters", size=15, color=NAVY, bold=True)
+    bullets(s, Inches(0.5), Inches(4.82), LW, Inches(2.4),
+            [(t, {**o, "size": o.get("size", 13)}) for t, o in
+             ((p if isinstance(p, tuple) else (p, {})) for p in why_pts)], size=13, gap=5)
+    rect(s, Inches(7.05), Inches(1.26), Inches(5.85), Inches(5.95), LIGHT)
+    textbox(s, Inches(7.28), Inches(1.4), Inches(5.4), Inches(0.4),
+            "The enhancement", size=15, color=GREEN, bold=True)
+    bullets(s, Inches(7.28), Inches(1.92), Inches(5.4), Inches(4.6),
+            [(t, {**o, "size": o.get("size", 13)}) for t, o in
+             ((p if isinstance(p, tuple) else (p, {})) for p in enh_pts)], size=13, gap=6)
+    if where:
+        textbox(s, Inches(7.28), Inches(6.62), Inches(5.4), Inches(0.55),
+                where, size=10, color=GREY, font="Consolas")
+    return s
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 1 — TITLE
 # ═══════════════════════════════════════════════════════════════════════════
@@ -302,11 +331,12 @@ table(s, Inches(0.5), Inches(1.4), Inches(12.3), Inches(5.4), [
     ["5", "Phased migration plan (7 phases)"],
     ["6", "JMS message migration — XML → JSON (Anti-Corruption Layer)"],
     ["7", "What we fixed — parity audit results"],
-    ["8", "Target as-built architecture"],
-    ["9", "Service inventory — summary + one slide per service"],
-    ["10", "CODE WALKTHROUGH (live)"],
-    ["11", "MongoDB stretch goal"],
-    ["12", "Wrap-up & Q&A"],
+    ["8", "Enhancements beyond parity (overview + 1 slide per enhancement)"],
+    ["9", "Target as-built architecture"],
+    ["10", "Service inventory — summary + one slide per service"],
+    ["11", "CODE WALKTHROUGH (live)"],
+    ["12", "MongoDB stretch goal"],
+    ["13", "Wrap-up & Q&A"],
 ], col_widths=[Inches(0.8), Inches(11.5)], fsize=13)
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -728,6 +758,247 @@ textbox(s, Inches(0.55), Inches(6.15), Inches(12.2), Inches(0.9), [
     ("Two bugs caught by LIVE end-to-end testing (not unit tests): large orders auto-shipped without approval; "
      "approve→fulfil race (published before commit). Both fixed + regression-tested.",
      {"size": 12, "color": RED})])
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 9b — ENHANCEMENTS (net improvements) — overview, then one slide each
+# ═══════════════════════════════════════════════════════════════════════════
+s = slide()
+title_bar(s, "Enhancements Beyond Parity — Overview",
+          "Not restoring legacy behaviour — genuinely improving it. Each gets its own slide next.",
+          tag="enhancements")
+textbox(s, Inches(0.5), Inches(1.3), Inches(12.4), Inches(0.7),
+        [("The parity audit RESTORED legacy behaviour. Separately, we hardened the system where legacy was "
+          "weak or where removing the EJB container opened a new risk. These are net improvements, each "
+          "recorded as an ADR in DECISIONS.md.", {"size": 13, "color": NAVY})])
+table(s, Inches(0.35), Inches(2.15), Inches(12.65), Inches(5.0), [
+    ["#", "Enhancement", "What legacy did / the risk", "What we added"],
+    ["E1", "BCrypt password hashing", "Plaintext matchPassword compare", "BCrypt at rest; RS256 verify-only elsewhere"],
+    ["E2", "Central auth-service (IdP)", "Auth logic scattered per app", "One RS256 issuer; services verify w/ public key"],
+    ["E3", "Transactional outbox", "Publish-after-commit → lost/dup on crash", "Event + order commit atomically; relay publishes"],
+    ["E4", "Explicit pessimistic lock", "Relied on EJB container lock (now gone)", "SELECT…FOR UPDATE + CHECK(qty>=0)"],
+    ["E5", "Optimistic lock (@Version)", "No guard on concurrent status writes", "@Version → approve/deny race = 409"],
+    ["E6", "DLQ + bounded redelivery", "A poison message hot-loops forever", "3 attempts, back-off, then DLQ + observer"],
+    ["E7", "Idempotent consumers + keys", "At-least-once → double-processing", "eventId/orderId dedup + checkout idempotency key"],
+    ["E8", "Validation + error contract", "500s / weak input validation", "@Valid + @RestControllerAdvice, correlationId body"],
+    ["E9", "CSRF + secure cookies", "csrf.disable(), plain cookies", "CSRF tokens + HttpOnly/SameSite/Secure-gated"],
+    ["E10", "Observability + stock cache", "No trace id; N stock calls", "correlationId MDC + single-flight stock cache"],
+], col_widths=[Inches(0.7), Inches(3.0), Inches(4.75), Inches(4.2)], fsize=9.5)
+
+# ── E1 — BCrypt ──────────────────────────────────────────────────────────────
+enh_slide(
+    1, "BCrypt password hashing", "Passwords are hashed at rest instead of compared in plaintext",
+    before_pts=[
+        ("Legacy UserEJB.matchPassword compared the submitted password to the stored one as PLAINTEXT.",
+         {}),
+        ("Credentials sat unhashed in the database; a DB leak = every password leaked.", {}),
+        ("No salt, no work factor, no upgrade path.", {}),
+    ],
+    enh_pts=[
+        ("Passwords are hashed with BCrypt (salted, adaptive work factor) and verified via "
+         "encoder.matches — never compared as text.", {"bold": True}),
+        ("Applied in auth-service (the credential owner) and the staff auth stores.", {}),
+        ("Parity path kept deliberately reversible: seed users can start as {noop} for the demo, "
+         "BCrypt is the production posture.", {}),
+    ],
+    why_pts=[
+        ("A stolen database no longer yields usable passwords.", {}),
+        ("This was flagged in the parity audit as a DELIBERATE security upgrade, not a drift.", {"color": GREEN}),
+    ],
+    where="auth-service/.../security/SecurityConfig.java · service/AuthService.java")
+
+# ── E2 — central auth-service / IdP ──────────────────────────────────────────
+enh_slide(
+    2, "Central identity provider (RS256)", "One issuer signs tokens; everyone else only verifies",
+    before_pts=[
+        ("Legacy SignOn logic lived inside the web app; each app effectively trusted its own check.",
+         {}),
+        ("A naive microservice port would duplicate JWT signing + the credential store per service — "
+         "a shared secret smeared everywhere.", {}),
+    ],
+    enh_pts=[
+        ("auth-service is the single IdP: the ONLY holder of credentials and the private signing key.",
+         {"bold": True}),
+        ("It mints RS256 (asymmetric) JWTs; every other service imports auth-client and verifies with "
+         "the PUBLIC key only.", {}),
+        ("No shared secret to leak; a compromised service can verify tokens but cannot mint them.", {}),
+    ],
+    why_pts=[
+        ("Blast radius shrinks: signing authority is in exactly one place.", {}),
+        ("Standard OAuth-style trust model, ready for real deployment.", {"color": GREEN}),
+    ],
+    where="auth-service/.../security/JwtIssuer.java · auth-client/.../PemKeys.java")
+
+# ── E3 — transactional outbox ────────────────────────────────────────────────
+enh_slide(
+    3, "Transactional outbox for events", "Order commit and event publish can no longer diverge",
+    before_pts=[
+        ("Legacy (and a naive port) publish to JMS AFTER committing the order.", {}),
+        ("A crash in the gap between commit and publish loses the message; a retry after publish "
+         "double-sends.", {"color": RED}),
+        ("The order says APPROVED but inventory never hears about it — a silent stuck order.", {"color": RED}),
+    ],
+    enh_pts=[
+        ("The outgoing event is written to an outbox row in the SAME DB transaction as the order "
+         "status change.", {"bold": True}),
+        ("A @Scheduled OutboxRelay polls unsent rows and publishes them, then marks them sent.", {}),
+        ("Rolled-back order → nothing emitted; committed order → always eventually emitted.", {}),
+        ("At-least-once relay is safe because events carry a fixed eventId and consumers are idempotent.",
+         {}),
+    ],
+    why_pts=[
+        ("Exactly-effectively-once publishing — the classic dual-write problem solved correctly.", {}),
+        ("Works identically on H2 and MongoDB (multi-doc tx on rs0).", {"color": GREEN}),
+    ],
+    where="order-processing-service/.../service/OutboxWriter.java · OutboxRelay.java")
+
+# ── E4 — pessimistic lock ────────────────────────────────────────────────────
+enh_slide(
+    4, "Explicit pessimistic stock lock", "Replaces the implicit EJB container lock that disappeared",
+    before_pts=[
+        ("Legacy leaned on the EJB container's entity-bean locking to serialise stock decrements.", {}),
+        ("Once the container is gone, read-then-write is a race: two orders read '5', both decrement, "
+         "stock goes negative (oversell).", {"color": RED}),
+        ("Nothing in the schema stopped a negative quantity.", {"color": RED}),
+    ],
+    enh_pts=[
+        ("findByIdForUpdate issues SELECT … FOR UPDATE (PESSIMISTIC_WRITE) — one transaction owns a "
+         "stock row at a time.", {"bold": True}),
+        ("Check-and-decrement runs inside one @Transactional method.", {}),
+        ("A DB CHECK (quantity >= 0) is the hard floor — the database refuses to go negative.", {}),
+    ],
+    why_pts=[
+        ("Verified with a 20-thread test: 5 stock → exactly 5 succeed, never negative.", {"color": GREEN}),
+        ("Preserves the legacy outcome (one ships, the other backorders) with an explicit, testable lock.",
+         {}),
+    ],
+    where="inventory-service/.../repository/jpa/InventoryJpaRepository.java")
+
+# ── E5 — optimistic lock ─────────────────────────────────────────────────────
+enh_slide(
+    5, "Optimistic locking on order status", "Concurrent approve + deny can no longer both win",
+    before_pts=[
+        ("Nothing guarded two admins (or a double-click) acting on the same PENDING order at once.", {}),
+        ("A lost update could leave the order in an inconsistent state, or fire both an approval AND a "
+         "denial event.", {"color": RED}),
+    ],
+    enh_pts=[
+        ("A @Version column on the order: the first writer commits, the second hits a stale version.",
+         {"bold": True}),
+        ("The stale write throws OptimisticLockingFailureException → mapped to HTTP 409 Conflict.", {}),
+        ("Preserved on MongoDB too (Spring Data version-guarded conditional update).", {}),
+    ],
+    why_pts=[
+        ("A clean, race-free order lifecycle without holding a DB lock across the whole request.", {}),
+        ("Cheap: one integer column + a mapped exception.", {"color": GREEN}),
+    ],
+    where="order-processing-service/.../repository/jpa/WarehouseOrderEntity.java (@Version)")
+
+# ── E6 — DLQ + redelivery ────────────────────────────────────────────────────
+enh_slide(
+    6, "Dead-letter queue + bounded redelivery", "A poison message is quarantined, not hot-looped forever",
+    before_pts=[
+        ("With naive JMS, a message a consumer keeps rejecting is redelivered immediately, endlessly — "
+         "a hot loop that starves the queue.", {"color": RED}),
+        ("A permanently-failing message is invisible: no operator signal, no landing zone.", {"color": RED}),
+    ],
+    enh_pts=[
+        ("Repo-managed broker.xml: retry at ~1s, ~2s (exponential back-off, cap 30s), then after 3 "
+         "attempts route to the DLQ.", {"bold": True}),
+        ("A DlqListener in notification-service logs every quarantined message at ERROR (raw, so an "
+         "undeserializable payload is still surfaced).", {}),
+        ("ExpiryQueue is observed the same way.", {}),
+    ],
+    why_pts=[
+        ("Failures become observable and bounded instead of silent and infinite.", {}),
+        ("Complements the outbox: outbox guarantees emit, DLQ handles un-consumable.", {"color": GREEN}),
+    ],
+    where="broker/etc/broker.xml · notification-service/.../DlqListener.java")
+
+# ── E7 — idempotent consumers ────────────────────────────────────────────────
+enh_slide(
+    7, "Idempotent consumers + checkout key", "At-least-once delivery can't cause double-processing",
+    before_pts=[
+        ("JMS is at-least-once: the same message can be delivered twice (retry, redelivery, crash-replay).",
+         {}),
+        ("A double-delivered approval could ship twice; a double-submitted checkout could place two orders.",
+         {"color": RED}),
+    ],
+    enh_pts=[
+        ("OPC's OrderListener skips an order it already has; InvoiceListener no-ops if already COMPLETED.",
+         {"bold": True}),
+        ("Inventory dedups by order_id (fulfilled_order ledger) — a re-driven order never "
+         "double-decrements.", {}),
+        ("Checkout carries an encrypted idempotency key (OrderKeyCipher); a refresh/double-submit maps to "
+         "the same order via OPC's PK dedup.", {}),
+    ],
+    why_pts=[
+        ("Safe under ANY at-least-once broker (also the JMS→Kafka swap path).", {"color": GREEN}),
+        ("Correctness that legacy simply assumed away.", {}),
+    ],
+    where="opc/.../messaging/OrderListener.java · petstore-app-v1/.../OrderKeyCipher.java")
+
+# ── E8 — validation + error contract ─────────────────────────────────────────
+enh_slide(
+    8, "Input validation + uniform error contract", "Bad input returns a clean 400, not a leaked 500",
+    before_pts=[
+        ("A naive port let bad input (bad status filter, malformed date, missing body) surface as a "
+         "raw 500 stack trace.", {"color": RED}),
+        ("Legacy validation was ad-hoc and inconsistent across screens.", {}),
+    ],
+    enh_pts=[
+        ("@Valid + bean-validation constraints on request bodies/forms across the services.", {"bold": True}),
+        ("@RestControllerAdvice maps: bad input → 400, illegal transition / version conflict → 409, "
+         "not-found → 404.", {}),
+        ("One uniform JSON error body: {status, error, detail, correlationId}.", {}),
+    ],
+    why_pts=[
+        ("Callers get actionable, predictable errors; no stack traces leak to clients.", {}),
+        ("The correlationId ties the error back to server logs.", {"color": GREEN}),
+    ],
+    where="*/web/ApiExceptionHandler.java · RestExceptionHandler.java")
+
+# ── E9 — CSRF + secure cookies ───────────────────────────────────────────────
+enh_slide(
+    9, "CSRF protection + hardened cookies", "Cookie-authed console POSTs can't be forged cross-site",
+    before_pts=[
+        ("A naive Spring port often ships csrf.disable() and plain cookies to 'just make it work'.",
+         {"color": RED}),
+        ("Legacy had no modern CSRF defence; a forged cross-site POST could approve/deny or restock.",
+         {"color": RED}),
+    ],
+    enh_pts=[
+        ("CSRF enabled for the cookie-authed UI routes (CookieCsrfTokenRepository), ignored for the "
+         "stateless JSON /api/** surface.", {"bold": True}),
+        ("Hidden CSRF field added to the Thymeleaf approve/deny/restock/login forms.", {}),
+        ("jwt cookie emitted HttpOnly + SameSite=Strict; Secure is config-gated (on for HTTPS, off for "
+         "local demo).", {}),
+    ],
+    why_pts=[
+        ("Defence in depth: SameSite=Strict alone already blocks the cross-site send.", {}),
+        ("JSON API stays stateless and unaffected.", {"color": GREEN}),
+    ],
+    where="admin-office + inventory SecurityConfig.java · *LoginController.java")
+
+# ── E10 — observability + stock cache ────────────────────────────────────────
+enh_slide(
+    10, "Observability + single-flight stock cache", "End-to-end trace ids and collapsed duplicate stock reads",
+    before_pts=[
+        ("Legacy had no request/trace id spanning the HTTP→JMS hops — debugging a stuck order meant "
+         "guesswork.", {}),
+        ("A product page rendering N items could fire N separate stock lookups (a thundering herd).",
+         {"color": RED}),
+    ],
+    enh_pts=[
+        ("A CorrelationIdFilter puts a correlationId in the MDC; it flows into the JMS event envelope "
+         "(EventMeta.correlationId) and every log line + error body.", {"bold": True}),
+        ("The inventory client wraps a single-flight cache: concurrent reads for the same item collapse "
+         "into one upstream call.", {}),
+    ],
+    why_pts=[
+        ("One id traces a shopper's action from checkout → JMS → fulfilment → email.", {}),
+        ("Fewer, cheaper calls to inventory under load.", {"color": GREEN}),
+    ],
+    where="customer-service/.../CorrelationIdFilter.java · inventory-client/.../SingleFlightStockCache.java")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 10 — TARGET AS-BUILT ARCHITECTURE (embed)
