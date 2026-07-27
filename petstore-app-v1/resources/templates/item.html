@@ -11,6 +11,13 @@
     <p><strong>Description:</strong> <span th:text="${item.description}">desc</span></p>
     <p><strong>Attribute:</strong> <span th:text="${item.attribute}">attr</span></p>
     <p><strong>List price:</strong> <span th:text="${#numbers.formatCurrency(item.listCost)}">$0.00</span></p>
+    <!-- Live stock badge (read-time composition from inventory-service). Hidden entirely when
+         stock is null (inventory-service unavailable / unknown item) so browsing never breaks. -->
+    <p th:if="${stock != null}">
+        <span th:if="${stock == 0}" style="color:#b00">Out of stock</span>
+        <span th:if="${stock > 0 and stock <= 5}" style="color:#c60">Only <span th:text="${stock}">N</span> left</span>
+        <span th:if="${stock > 5}" style="color:#080">In stock</span>
+    </p>
     <p>Cart quantity:
         <span th:replace="~{fragments/stepper :: stepper(${item.itemId}, ${itemQty})}">stepper</span>
     </p>

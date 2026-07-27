@@ -27,8 +27,16 @@ public class SecurityConfig {
     /** Default auth-service base URL when {@code services.auth.base-url} is not set. */
     private static final String DEFAULT_AUTH_BASE_URL = "http://localhost:8086";
 
-    /** Public paths: health/metrics probes and the login/logout endpoints themselves. */
+    /**
+     * Public paths: health/metrics probes, the login/logout endpoints, and the per-item
+     * availability read. Availability is public because it feeds the storefront's stock badge on
+     * public product pages (read-time composition) — the same "display data needs no auth" stance
+     * catalog-service takes. NOTE the {@code GET}-only + single-item shape: the bulk
+     * {@code /api/inventory} snapshot and all writes stay SUPPLIER/ADMIN via {@link #INVENTORY_MATCHERS}.
+     */
     private static final String[] PUBLIC_MATCHERS = {"/actuator/**", "/inventory/login", "/inventory/logout"};
+    /** Single-item availability read — public (see {@link #PUBLIC_MATCHERS}); matched ahead of the API rule. */
+    private static final String AVAILABILITY_MATCHER = "/api/inventory/*/availability";
     /** Protected surface: the receiver UI + inventory JSON API. */
     private static final String[] INVENTORY_MATCHERS = {"/inventory/**", "/api/inventory/**"};
     /** Roles (without Spring's {@code ROLE_} prefix) allowed on the inventory surface. */
@@ -72,6 +80,9 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> {
                 auth.requestMatchers(PUBLIC_MATCHERS).permitAll();
+                // GET availability is public — declared BEFORE the /api/inventory/** rule so the
+                // more specific matcher wins (Spring evaluates matchers in order).
+                auth.requestMatchers(org.springframework.http.HttpMethod.GET, AVAILABILITY_MATCHER).permitAll();
                 if (devConsole) {
                     auth.requestMatchers(new AntPathRequestMatcher("/h2-console/**")).permitAll();
                 }

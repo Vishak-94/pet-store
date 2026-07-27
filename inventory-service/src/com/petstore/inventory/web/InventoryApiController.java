@@ -20,6 +20,7 @@ public class InventoryApiController {
 
     /** Route paths (kept as constants so they can't drift from the security matchers). */
     private static final String ALL_INVENTORY = "/api/inventory";
+    private static final String AVAILABILITY = "/api/inventory/{itemId}/availability";
     private static final String RESTOCK = "/api/inventory/{itemId}/restock";
     /** JSON response body keys. */
     private static final String KEY_ERROR = "error";
@@ -57,6 +58,32 @@ public class InventoryApiController {
     @GetMapping(ALL_INVENTORY)
     public Map<String, Integer> inventory() {
         return inventory.all();
+    }
+
+    /**
+     * On-hand stock for a SINGLE item — a narrow, <b>public</b> read for the storefront to show a
+     * "in stock / only N left / out of stock" badge on the item page (read-time API composition;
+     * the storefront composes catalog + this). Deliberately separate from {@link #inventory()}:
+     * that returns the whole table and is SUPPLIER/ADMIN-only, whereas per-item availability shown
+     * on a public product page is inherently public (any visitor sees it), so this one path is
+     * opened in {@code SecurityConfig} — mirroring catalog-service, which serves display data with
+     * no auth. Read-only, no locking; an unknown item returns {@code quantity: 0} (not a 404), so
+     * the caller renders "out of stock" rather than special-casing missing items.
+     *
+     * <pre>{@code
+     * GET /api/inventory/EST-2/availability
+     *
+     * 200 OK
+     * { "itemId": "EST-2", "quantity": 3 }
+     * }</pre>
+     *
+     * @param itemId the item to look up (path variable)
+     * @return 200 with the itemId and on-hand quantity (0 if the item is unknown)
+     */
+    @GetMapping(AVAILABILITY)
+    public Map<String, Object> availability(@PathVariable String itemId) {
+        int onHand = inventory.quantityOf(itemId).orElse(0);
+        return Map.of(KEY_ITEM_ID, itemId, KEY_QUANTITY, onHand);
     }
 
     /**

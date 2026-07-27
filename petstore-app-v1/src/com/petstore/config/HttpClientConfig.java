@@ -3,6 +3,7 @@ package com.petstore.config;
 import com.petstore.auth.client.AuthClient;
 import com.petstore.catalog.client.CatalogServiceClient;
 import com.petstore.customer.client.CustomerServiceClient;
+import com.petstore.inventory.client.InventoryClient;
 import com.petstore.opc.client.OrderProcessingClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -26,12 +27,14 @@ public class HttpClientConfig {
     private static final String CB_CATALOG = "catalog-service";
     private static final String CB_AUTH = "auth-service";
     private static final String CB_ORDER_PROCESSING = "order-processing-service";
+    private static final String CB_INVENTORY = "inventory-service";
 
     /** Dev fallback base URLs when the {@code services.*.base-url} property is unset. */
     private static final String DEFAULT_CUSTOMER_BASE_URL = "http://localhost:8081";
     private static final String DEFAULT_CATALOG_BASE_URL = "http://localhost:8083";
     private static final String DEFAULT_AUTH_BASE_URL = "http://localhost:8086";
     private static final String DEFAULT_ORDER_PROCESSING_BASE_URL = "http://localhost:8088";
+    private static final String DEFAULT_INVENTORY_BASE_URL = "http://localhost:8085";
 
     @Bean
     CustomerServiceClient customerServiceClient(ServiceEndpoints endpoints) {
@@ -45,6 +48,15 @@ public class HttpClientConfig {
         String baseUrl = endpoints.getCatalog().getBaseUrl();
         String url = (baseUrl == null || baseUrl.isBlank()) ? DEFAULT_CATALOG_BASE_URL : baseUrl;
         return new CatalogServiceClient(ResilientRestClient.forService(CB_CATALOG, url));
+    }
+
+    @Bean
+    InventoryClient inventoryClient(ServiceEndpoints endpoints) {
+        String baseUrl = endpoints.getInventory().getBaseUrl();
+        String url = (baseUrl == null || baseUrl.isBlank()) ? DEFAULT_INVENTORY_BASE_URL : baseUrl;
+        // Availability is an idempotent GET, so the breaker AND the bounded GET-retry both apply —
+        // and the read is only for a cosmetic stock badge, so the controller degrades on any failure.
+        return new InventoryClient(ResilientRestClient.forService(CB_INVENTORY, url));
     }
 
     @Bean

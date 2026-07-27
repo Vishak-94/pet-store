@@ -3,6 +3,9 @@ package com.petstore.catalog.web;
 import com.petstore.catalog.CatalogViewMapper;
 import com.petstore.catalog.client.CatalogServiceClient;
 import com.petstore.catalog.domain.Item;
+import com.petstore.inventory.client.InventoryClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -49,13 +52,20 @@ public class CatalogController {
     private static final String ATTR_KEYWORD = "keyword";
     private static final String ATTR_CART_QTY = "cartQty";
     private static final String ATTR_ITEM_QTY = "itemQty";
+    /** On-hand stock for the item page's live badge; {@code null} → template hides the badge. */
+    private static final String ATTR_STOCK = "stock";
+
+    private static final Logger log = LoggerFactory.getLogger(CatalogController.class);
 
     private final CatalogServiceClient catalog;
     private final com.petstore.cart.service.CartService cart;
+    private final InventoryClient inventory;
 
-    public CatalogController(CatalogServiceClient catalog, com.petstore.cart.service.CartService cart) {
+    public CatalogController(CatalogServiceClient catalog, com.petstore.cart.service.CartService cart,
+                             InventoryClient inventory) {
         this.catalog = catalog;
         this.cart = cart;
+        this.inventory = inventory;
     }
 
     /** The active locale as catalog-service's key (e.g. "en_US", "ja_JP", "zh_CN"). */
@@ -146,16 +156,37 @@ public class CatalogController {
      * 200 OK  renders item.html
      *   model: item    = {itemId:"EST-1", attribute:"Large", listPrice:16.50}   // null if unknown
      *          itemQty = 2   // how many of this item are in the cart (0 if none)
+     *          stock   = 7   // on-hand from inventory-service; null when unavailable (badge hidden)
      * }</pre>
      *
      * <p>Missing {@code id} → 400; unknown {@code id} renders with {@code item=null}.
+     *
+     * <p>The {@code stock} attribute is composed at read time from inventory-service (read-time
+     * API composition); a slow/down inventory-service degrades to {@code null} (badge hidden) and
+     * never blocks browsing — see {@link #resolveStock(String)}.
      */
     @GetMapping("/item")
     public String item(@RequestParam(PARAM_ID) String itemId, Model model) {
         model.addAttribute(ATTR_ITEM, catalog.getItem(itemId, currentLocale())
                 .map(CatalogViewMapper::toItem).orElse(null));
         model.addAttribute(ATTR_ITEM_QTY, cart.quantityOf(itemId));
+        model.addAttribute(ATTR_STOCK, resolveStock(itemId));
         return VIEW_ITEM;
+    }
+
+    /**
+     * Live on-hand stock for the item-page badge, or {@code null} if it can't be determined.
+     * Cosmetic and fully degradable: any failure (breaker open, timeout, inventory-service down)
+     * is swallowed and returns {@code null} so the template simply hides the badge — the page
+     * still renders. Mirrors the safe-swallow pattern in {@code GlobalModelAdvice.cartCount}.
+     */
+    private Integer resolveStock(String itemId) {
+        try {
+            return inventory.stockFor(itemId).orElse(null);
+        } catch (RuntimeException e) {
+            log.debug("stock unavailable for {}, hiding badge: {}", itemId, e.getMessage());
+            return null;
+        }
     }
 
     /**

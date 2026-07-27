@@ -25,6 +25,7 @@ public class ServiceEndpoints {
     private Service customer = new Service();
     private Service catalog = new Service();
     private Service orderProcessing = new Service();
+    private Service inventory = new Service();
 
     public Service getCustomer() { return customer; }
     public void setCustomer(Service customer) { this.customer = customer; }
@@ -34,6 +35,9 @@ public class ServiceEndpoints {
 
     public Service getOrderProcessing() { return orderProcessing; }
     public void setOrderProcessing(Service orderProcessing) { this.orderProcessing = orderProcessing; }
+
+    public Service getInventory() { return inventory; }
+    public void setInventory(Service inventory) { this.inventory = inventory; }
 
     public static class Service {
         private String baseUrl;
