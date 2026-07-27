@@ -49,11 +49,17 @@ auth :8086) should be up for the UI to fully work.
 
 ## Invariants (do NOT break)
 
-1. **Publish-only order model — NEVER add order persistence here.** `OrderService.checkout`
-   builds a `PurchaseOrderEvent` and `publisher.publish(Destinations.PURCHASE_ORDER, event)`,
-   then empties the cart. No DB, no JPA, no order table — the OPC (order-processing-service)
-   is the authoritative store. There is deliberately **no** `spring-boot-starter-data-jpa` in
-   `pom.xml`. Do not add order status/lookup endpoints here (status is owned by OPC on :8088).
+1. **No order persistence here — hand the order to OPC and empty the cart.** `OrderService.checkout`
+   builds a `CheckoutRequest` and calls `orderProcessingClient.checkout(request, jwt)` — a
+   **synchronous** `POST /api/orders/intake` to order-processing-service — then empties the cart
+   on success. (This replaced the old fire-and-forget publish of a `PurchaseOrderEvent` to
+   `PurchaseOrderQueue`; see root `DECISIONS.md`.) No DB, no JPA, no order table — the OPC
+   (order-processing-service) is the authoritative store. There is deliberately **no**
+   `spring-boot-starter-data-jpa` in `pom.xml`. Do not add order status/lookup endpoints here
+   (status is owned by OPC on :8088). The storefront **proxies the shopper's JWT**
+   (`auth.getCredentials()`) to OPC so it can authorize the intake endpoint for the customer role;
+   if OPC is unreachable, checkout throws `OrderIntakeUnavailableException` → clean 503 / retry
+   notice and the cart is left intact (NOT emptied).
 2. **This module is a broker CLIENT, not the broker host.** `application.yml` runs Artemis
    `mode: native` with `embedded.enabled: false` and connects to `broker-url`
    (`${BROKER_URL:tcp://localhost:61616}`) — the standalone container in the repo
@@ -81,9 +87,13 @@ auth :8086) should be up for the UI to fully work.
 
 ## JMS events
 
-- **Produces:** `PurchaseOrderEvent` → `PurchaseOrderQueue` (queue) on checkout, via
-  `MessagePublisher` from petstore-messaging. Nullable `shipTo`/`billTo` `ContactInfo` are populated.
-- **Consumes:** nothing. This module has no `@JmsListener`; it is a pure producer + broker host.
+- **Produces:** nothing. Checkout intake moved from JMS to a **synchronous REST call** to OPC's
+  `POST /api/orders/intake` (see `DECISIONS.md`); the storefront no longer publishes a
+  `PurchaseOrderEvent` to `PurchaseOrderQueue`. `MessagePublisher` / `Destinations.PURCHASE_ORDER`
+  are no longer used here. (The `petstore-messaging` dependency + Artemis client remain on the
+  classpath — the storefront still runs as a broker client for the rest of the fleet's plumbing —
+  but no `publish(...)` call is made on the checkout path.)
+- **Consumes:** nothing. This module has no `@JmsListener`.
 
 ## External dependencies (client SDKs it calls)
 
@@ -93,7 +103,8 @@ auth :8086) should be up for the UI to fully work.
 | `customer-service-client` (`CustomerServiceClient`) | `StorefrontController`, `CustomerController`, `SignOnLocaleSuccessHandler` | Register; read/update account/profile/card (:8081), Bearer = session JWT |
 | `catalog-service-client` (`CatalogServiceClient`) | `CatalogController`, cart-lib | Browse/search + item price resolution (:8083) |
 | `cart-lib` (`CartOperations`/`CartStore`) | `CartService` | In-process cart + 15-min sliding TTL |
-| `petstore-messaging` (`MessagePublisher`, `Destinations`, `Events`) | `OrderService` | Publish PO to the queue |
+| `order-processing-client` (`OrderProcessingClient`) | `OrderService` | Synchronous checkout intake — `POST /api/orders/intake` (:8088), Bearer = shopper JWT |
+| `petstore-messaging` (`Events`, `Correlation`) | `CorrelationIdFilter` | Correlation-id bridge; no longer used to publish on checkout |
 
 Auth is fully **delegated**: this module holds no credentials and no `UserDetailsService`.
 The JWT lives as the `Authentication` credential and is forwarded as a Bearer token; the stable
@@ -106,8 +117,11 @@ The JWT lives as the `Authentication` credential and is forwarded as a Bearer to
   as params). Both are in the `authenticated()` matcher and both are CSRF-exempt.
 - CSRF is **disabled** for `/checkout`, `/api/checkout`, `/cart/**`, `/admin/**` (form/AJAX posts).
 - `GlobalModelAdvice` adds `cartCount` to every `@Controller` view (not `@RestController`).
-- `OrderService` hardcodes `locale = Locale.US` on the published PO (legacy quirk) — the UI
-  locale does not flow into the PO.
+- `OrderService` hardcodes `locale = Locale.US` (and `currency = USD`) on the intake request
+  (legacy quirk) — the UI locale does not flow into the order.
+- **Checkout intake is synchronous** — a slow/down OPC blocks the checkout thread until the SDK's
+  bounded timeout / circuit breaker trips, then `OrderIntakeUnavailableException` → 503. It no
+  longer returns instantly the way the old fire-and-forget publish did.
 - `CartService.cartId()` throws `IllegalStateException` if `CartIdFilter` didn't run — in tests,
   bind a `MockHttpServletRequest` with `CartIdFilter.REQUEST_ATTR` set (see the existing tests).
 - Registration returns the user to the originating screen (L2): `?returnUrl=` wins over `Referer`,
@@ -115,8 +129,9 @@ The JWT lives as the `Authentication` credential and is forwarded as a Bearer to
 
 ## Tests (`test/com/petstore/`)
 
-- `order/OrderCharacterizationTest` — checkout publishes PO + computes total + empties cart; no persistence.
-- `order/CheckoutAddressTest` — H7 required/optional field set + contacts on the published event.
+- `order/OrderCharacterizationTest` — checkout POSTs a `CheckoutRequest` to OPC (JWT forwarded) +
+  computes total + empties cart on success; OPC-down → `OrderIntakeUnavailableException`, cart kept.
+- `order/CheckoutAddressTest` — H7 required/optional field set + contacts on the intake request.
 - `cart/CartServiceAdapterTest` — CartService delegates to cart-lib with the resolved cart id.
 - `security/SecurityTest` — `@SpringBootTest` slice; login delegated to a mocked `AuthClient`;
   public pages open, `/checkout` redirects when anonymous, logout ends session.

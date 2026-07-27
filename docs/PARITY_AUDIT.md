@@ -18,14 +18,16 @@ below is a place where observable behavior drifted and should be reviewed agains
 
 ## Remediation status (2026-07-24)
 
-All gaps have been addressed. Two were confirmed as **intentional** design decisions (recorded in
-`DECISIONS.md`) and kept as-is per explicit direction; every other gap was **FIXED** to restore
-legacy behavioral parity. All touched modules build and their test suites pass.
+All gaps have been addressed. H1 (all-or-nothing fulfilment) and M8 (no persisted supplier PO) are
+kept as **intentional** design decisions (recorded in `DECISIONS.md`); every other gap was **FIXED**
+to restore legacy behavioral parity — including H2 (backorder retry-on-restock), restored later via an
+event-driven re-drive rather than the legacy PENDING PO store. All touched modules build and their test
+suites pass.
 
 | # | Status | Resolution |
 |---|--------|-----------|
 | H1 | **KEEP (intentional)** | All-or-nothing fulfilment is a recorded decision. Only cleanup applied: removed the unreachable `OrderStatus.SHIPPED_PART` dead state and corrected `FulfilmentService` javadoc to describe the actual all-or-nothing behavior. |
-| H2 | **KEEP (intentional)** | Backorder retry-on-restock is out of scope by the same recorded decision (no persisted supplier PO). No behavior change. |
+| H2 | **FIXED (event-driven re-drive)** | Backorder retry-on-restock restored, but by a different mechanism than legacy (no persisted supplier PO — see M8). Inventory-service publishes a `RestockEvent` to `RestockTopic` on restock; OPC's `RestockListener` re-drives every APPROVED (backordered) order, oldest-first, back through the existing `ApprovalGateway` → outbox → `ApprovedOrderQueue` → fulfilment pipeline (`AdminService.redriveApprovedForFulfilment`). Idempotent: inventory dedups by `order_id` (`fulfilled_order` ledger, replacing the eventId-keyed `processed_event`) so a re-driven order that already shipped never double-decrements. Matches the legacy `processPendingPO`-on-restock **observable behavior** without the legacy PENDING PO store. |
 | H3 | **FIXED** | New `OrderStatusEvent` broadcast on `OrderStatusTopic` via `OrderStatusGateway` (after-commit); `notification-service` `OrderStatusNotificationListener` emails customer on APPROVED/DENIED (`"...Order Status: <id>"`). |
 | H4 | **FIXED** | COMPLETED transition (in `InvoiceListener`) announces via the same gateway; distinct `"...Order COMPLETED: <id>"` subject restored in `OrderMailComposer`. |
 | H5 | **FIXED** | `getChartInfo` aggregation logic restored: OPC `aggregateSales(start,end,category)` (JPQL GROUP BY revenue Σ qty·unitPrice + order counts) exposed at `GET /api/sales`; admin-office delegates via `OrderProcessingClient`. Added `wh_order.created` timestamp for the date range. |
@@ -40,7 +42,7 @@ legacy behavioral parity. All touched modules build and their test suites pass.
 | M5 | **FIXED** | Registration re-validates the legacy required contact + card field set (400 on missing). |
 | M6 | **FIXED** | Sign-on provisioning rejects username/password > 25 chars and username with `%`/`*`. |
 | M7 | **FIXED** | Account `status` (`active`/`disabled`, seeded `active`) field + column restored. |
-| M8 | **KEEP (intentional)** | Structural root of H1/H2; out of scope by the same recorded decision. |
+| M8 | **KEEP (intentional)** | Supplier PO still not persisted (no `SupplierOrder` entity / per-line `quantityShipped`). Structural root of H1 (all-or-nothing kept). H2's retry-on-restock is now restored *without* it — OPC re-drives from its own APPROVED order read-model, so the legacy PO store is not required for parity. |
 | L2 | **FIXED** | Return-to-originating-screen after registration restored (same-app guarded). |
 | L4 | **FIXED** | `locale` helper handles `"default"` → `Locale.getDefault()` and 3-part `language_country_variant`. |
 | L5 | **FIXED** | Catalog pagination uses `Slice.hasNext()` (limit+1) — no more over-reported empty final page. |
@@ -54,7 +56,7 @@ legacy behavioral parity. All touched modules build and their test suites pass.
 | # | Gap | Legacy behavior | Migrated behavior | Evidence / corroboration |
 |---|-----|-----------------|-------------------|--------------------------|
 | H1 | **Partial-shipment semantics lost** | `OrderFulfillmentFacadeEJB.processAnOrder` ships every *available* line immediately, invoices the shipped subset, leaves short lines PENDING (`SHIPPED_PART`). | `FulfilmentService.fulfil` is strictly **all-or-nothing**: if any one line is short, nothing ships and nothing is decremented. `OrderStatus.SHIPPED_PART` is declared but **unreachable dead code**. | Corroborated by **supplier** + **opc** agents. Migrated `FulfilmentService` Javadoc *claims* it mirrors legacy — it does not. NB: distinct from the sanctioned single-item oversell fix (which is preserved). |
-| H2 | **Backorder retry-on-restock dropped** | `RcvrRequestProcessor.processPendingPO` + `findOrdersByStatus(PENDING)` re-fulfil PENDING orders whenever stock is received. | Restock only does additive `addQuantity`; **no PENDING store, no reprocessing trigger**. A backordered order is never auto-shipped once stock returns. | supplier agent. Structural root: no persisted supplier PO (see M8). |
+| H2 | **Backorder retry-on-restock dropped → RESTORED (event-driven)** | `RcvrRequestProcessor.processPendingPO` + `findOrdersByStatus(PENDING)` re-fulfil PENDING orders whenever stock is received. | **Now restored** via a different mechanism (no persisted supplier PO): restock publishes `RestockEvent`→`RestockTopic`; OPC's `RestockListener` re-drives every APPROVED backorder oldest-first through the outbox→`ApprovedOrderQueue`→fulfilment path, idempotent via inventory's `order_id`-keyed `fulfilled_order` ledger. A backordered order **is** auto-shipped once stock returns. | supplier agent. Restored from OPC's own APPROVED read-model instead of the legacy PENDING PO store (see M8). |
 | H3 | **Order APPROVAL/STATUS email missing** | `MailOrderApprovalMDB` emails customer subject `"Java Pet Store Order Status: <id>"` on approve/deny. | No listener emails the customer on approval/denial. | Corroborated by **mailer** + **opc** agents. |
 | H4 | **Order COMPLETED email missing** | `MailCompletedOrderMDB` emails subject `"Java Pet Store Order COMPLETED: <id>"` when fully shipped. | Status set to COMPLETED but no email; subject string absent from entire codebase. | Corroborated by **mailer** + **opc** agents. (Only the INVOICE / "Order Shipped" email was migrated.) |
 | H5 | **Sales/revenue charting & aggregation gone** | `getChartInfo(start,end,category)` aggregates REVENUE (Σ qty·unitPrice by category/item) and ORDERS (counts) — present in admin BD, webservice, and OPC facade. | Zero migrated path in admin-office-service **or** OPC. The *aggregation business logic* is gone, not just the Swing charts. | Corroborated by **admin** (HIGH) + **opc** agents. |
@@ -115,5 +117,7 @@ legacy behavioral parity. All touched modules build and their test suites pass.
    JPQL and `order by name`; populate `category` from `catid`.
 4. **Checkout address validation (H7)** — decide first: was dropping ship/bill capture an intentional
    scope cut, or a regression? (Interacts with the publish-only storefront decision.)
-5. **Partial shipment + backorder retry (H1, H2, M8)** — largest change; requires persisting supplier POs.
-   Confirm whether all-or-nothing was an intentional simplification before restoring.
+5. **Partial shipment + backorder retry (H1, H2, M8)** — H2 (retry-on-restock) has since been restored
+   *without* persisting supplier POs, via an event-driven re-drive (RestockEvent → OPC re-dispatches
+   APPROVED backorders); see the resolution table. H1 (all-or-nothing) + M8 (no persisted supplier PO)
+   remain intentional keeps — restoring true partial shipment would still require the supplier PO store.

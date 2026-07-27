@@ -370,3 +370,131 @@ persistence is exact; the imprecision is only in in-JVM arithmetic.
 - **Known limitation (accepted):** IEEE-754 `double` can accumulate sub-cent rounding drift on large sums and can
   make an `ApprovalPolicy` threshold comparison flip at the exact boundary. Revisit with option (a) or (b) before
   any real-money production use. Tracked here rather than fixed.
+
+## Order intake: async JMS publish → synchronous REST call to OPC — **DECIDED**
+Checkout previously placed an order by PUBLISHING a `PurchaseOrderEvent` to `PurchaseOrderQueue`
+(fire-and-forget); OPC's `OrderListener` consumed it, persisted, and ran the approval policy. Intake is
+now a **synchronous REST call** from the storefront to OPC (`POST /api/orders/intake`, via
+`OrderProcessingClient.checkout`). This is "Shape 2" — a checkout API that resides INSIDE OPC, called
+directly by the storefront — chosen over a standalone checkout service.
+- **Why (user):** the queue payload carried the full order (lines + contacts + totals), OPC re-read all of
+  it off the queue, and nothing else consumed `PurchaseOrderQueue` — a point-to-point hop with one producer
+  and one consumer. Making it a direct call removes the double data-transfer (publish then re-read) and the
+  broker round-trip for a message that was really a synchronous command, and lets the shopper see the
+  persisted outcome (PENDING/APPROVED + id) on the result page without a follow-up fetch.
+- **Single writer preserved:** OPC remains the sole owner of order create AND status. The intake handler
+  delegates to the SAME `FulfilmentService.receiveOrder` the JMS path used, so approval policy, idempotency
+  (dedup on the `order_id` PK), and outbox dispatch of `OrderApprovedEvent`/`OrderStatusEvent` are byte-for-byte
+  identical — the migration changes only HOW the order arrives, not what OPC does with it.
+- **Auth:** the storefront proxies the shopper's JWT (`auth.getCredentials()`) as a Bearer token; OPC's
+  `SecurityConfig` authorizes `/api/orders/intake` for `ROLE_USER`/`ROLE_ADMIN` (the admin facade endpoints
+  stay ADMIN-only). OPC is still verify-only (no credential store).
+- **Idempotency unchanged:** the storefront still mints the `orderId` (encrypted `orderKey` synchronizer
+  token) and PASSES it on the request, so a refresh/double-submit carries the same id and OPC's PK dedup
+  collapses it to a no-op — a duplicate submit returns the already-stored order's id + status.
+- **Availability trade-off (accepted, made observable):** the old publish absorbed an OPC outage in the
+  broker; the sync call surfaces it. A transport failure / open circuit breaker throws
+  `OrderIntakeUnavailableException`, which the checkout controllers map to a clean **503** ("try again
+  shortly") and the cart is NOT emptied so the shopper can retry. `OrderProcessingClient` runs over the same
+  `ResilientRestClient` (circuit breaker + bounded timeouts) as the other SDKs.
+- **KEEP JMS downstream:** only the storefront→OPC intake hop changed. OPC→inventory (`ApprovedOrderQueue`),
+  inventory→OPC/notification (`InvoiceTopic`), and OPC→notification (`OrderStatusTopic`) stay JMS, still via
+  the transactional outbox. `PurchaseOrderQueue`/`OrderListener` are **deprecated but kept working** (an
+  older client that still publishes is consumed identically) — not deleted, so nothing that still publishes
+  breaks during the transition.
+- **Sequencing:** landed as Change 1 on the existing file-based H2 store first (this ADR); a later Change 2
+  swaps the OPC store H2 → MongoDB independently, since the store is behind the `OrderStore` port and the
+  intake contract doesn't change.
+
+## OPC store: H2 → MongoDB as a profile-selectable swap (Change 2) — **DECIDED**
+The OPC order + outbox store can now run on **MongoDB 7.0** as an alternative to file-based H2, selected by
+the Spring **`mongo` profile** (`SPRING_PROFILES_ACTIVE=mongo`). The default profile is unchanged H2 + JPA +
+Flyway. This delivers on the swappability the port design promised (see "Swappability guarantee") without
+touching the service, messaging, or web layers. As-built doc: [`docs/MONGODB_SCHEMA.md`](docs/MONGODB_SCHEMA.md).
+- **Why a swap, not a hard replace (user):** keep H2 as the zero-setup default (demo runs with no container),
+  prove the `OrderStore`/`OutboxStore` ports are genuinely store-neutral, and make the choice reversible.
+  Exactly one adapter is live per profile — JPA adapters are `@Profile("!mongo")`, Mongo adapters
+  `@Profile("mongo")`. Both starters stay on the classpath; each profile's `application.yml` document
+  excludes the *other's* autoconfig so only one store ever tries to connect.
+- **Aggregate shape:** the three-table SQL order (`wh_order` + `wh_line` + embedded `ship_*`/`bill_*`) collapses
+  into **one `orders` document** with embedded `lines[]` + `shipTo`/`billTo` subdocs; `orderId` becomes `_id`
+  (natural dedup for at-least-once redelivery). Outbox stays a **separate `outbox` collection**. `MongoOrderStore`
+  reproduces the JPQL sales `GROUP BY` with a `$match`→`$unwind`→`$group` aggregation pipeline (parity test
+  asserts identical figures to the JPA path).
+- **`$jsonSchema` validator (user chose yes):** `MongoSchemaConfig` applies a `collMod` validator
+  (validationLevel moderate, action error) on `orders`/`outbox` at `ApplicationReadyEvent` — required fields +
+  `status` enum + `lines` minItems:1 — so the schemaless store still rejects malformed writes, mirroring what
+  the Flyway DDL + `@Enumerated` pin on H2. Idempotent (create-if-missing then collMod). Plus the same indexes
+  the SQL queries rely on (`status`, `created` desc, unpublished-outbox).
+- **`@Version` optimistic lock preserved:** Spring Data MongoDB applies the version-guarded conditional update
+  automatically, so the approve+deny race still yields **409** on the loser — identical contract to JPA (B1).
+  `updateStatus` does load→mutate→save (not a blind `$set`) so the guard fires.
+- **Outbox atomicity → `MongoTransactionManager`:** a `@Profile("mongo")` `MongoTransactionManager` bean makes
+  `@Transactional` open a real Mongo session transaction, so the order-status write + outbox enqueue commit or
+  roll back together — the same guarantee the JPA transaction gave. **This is why Mongo runs as a single-node
+  replica set `rs0`** (multi-document transactions require it); local runtime is `docker-compose.yml`
+  (`mongo` on :27018, `directConnection=true`, browsable via `mongo-express` on :8971).
+- **Outbox port id `long` → `String` (user chose String):** `OutboxMessage.id` / `markPublished` / `recordFailure`
+  now take a `String` so the port is store-neutral — `JpaOutboxStore` maps the Long IDENTITY
+  (`String.valueOf`/`Long.parseLong`), `MongoOutboxStore` maps the `ObjectId` hex. The relay only echoes the id
+  back, so it never parses it. Payload is stored **as a String** (byte-identical to the JMS-converter output)
+  to preserve the frozen payload + `eventId`.
+- **Change-stream relay = deferred, NOT built:** `OutboxRelay` still **polls** `{ publishedAt: null }` on its
+  `@Scheduled` interval on both stores — the poller is store-agnostic and already correct. Driving it off a
+  Mongo change stream is a latency optimisation left as a follow-up, not a correctness fix.
+- **Testcontainers softens the no-container rule — for Mongo tests only (user chose Testcontainers):** the
+  `repository/mongo/*Test` suite (20 tests: sales parity, `@Version` conflict, outbox drain/park, `$jsonSchema`
+  validator rejection, and the query/negative-path coverage) runs against a real `mongo:7.0`, the one scoped
+  exception to "hermetic, no external deps" — so the store's real queries are exercised true-to-prod. The
+  container is a **manually-started static singleton** in `MongoTestBase` shared across all Mongo test classes
+  (not JUnit's one-container-per-class), with an `assumeTrue(dockerAvailable)` guard: a plain `mvn clean install`
+  with no reachable Docker **skips** all 20 and stays green; the rest of the suite is untouched. The singleton
+  replaced the original per-class `@Container` + `@Testcontainers(disabledWithoutDocker = true)` because booting
+  five separate containers in one run intermittently hit a Colima port-forwarding flake (`Connection refused` →
+  30s-per-op driver selector timeouts that stalled the build). On Colima the run needs `-Dapi.version=1.44` +
+  `TESTCONTAINERS_RYUK_DISABLED=true` + a socket override (documented in OPC `CLAUDE.md`).
+- **Mongo names centralised in `MongoSchema`:** collection/field/index/aggregation-key names for the `mongo`
+  profile live as constants in one package-private `MongoSchema` holder, referenced by the `@Document`/`@Field`
+  mapping, the query + aggregation code, the validator/index setup, and the tests — so a rename can't drift one
+  place out of sync with another (Mongo silently treats a mistyped field as a different field). Crucially
+  `MongoSchema.ORDER_STATUSES` is **derived from the `OrderStatus` enum** (`Arrays.stream(values()).map(name)`),
+  not hand-listed, so the `$jsonSchema` status enum can never fall behind the domain. MongoDB's own command/BSON
+  vocabulary (`collMod`, `$jsonSchema`, `bsonType`, …) stays inline — it's the driver DSL, not a domain string.
+- **KEEP JMS / single-writer / parity all preserved:** this changes only where OPC persists, not what it does.
+  The `OrderStatus` set, transition rules, all-or-nothing fulfilment, idempotent listeners, and the outbox
+  dispatch are byte-for-byte identical above the port. See §5 parity checklist in `docs/MONGODB_SCHEMA.md`
+  (every box pinned by a passing Mongo integration test).
+
+## Backorder retry-on-restock restored — event-driven re-drive (PARITY_AUDIT H2) — **DECIDED**
+Legacy `RcvrRequestProcessor.processPendingPO()` re-fulfilled pending POs whenever a supplier restock
+arrived; the migration had dropped this (H2) because there is no persisted supplier PO (M8, still kept).
+Restored the **observable behavior** — "a backordered order auto-ships once stock returns" — without
+resurrecting the legacy PENDING-PO store, so the migration golden rule ("migrate observable behaviour,
+not code") holds.
+- **Mechanism (event-driven, async).** inventory-service `RestockService.restock` now, after the additive
+  `addQuantity`, publishes a new `RestockEvent` (itemId, quantityAdded) to a new **`RestockTopic`**.
+  OPC's new `RestockListener` (durable sub `opc-restock`) reacts by calling
+  `AdminService.redriveApprovedForFulfilment`, which loads every **APPROVED** (backordered) order, sorts
+  **oldest-`created`-first** (longest-waiting backorder gets first claim on the replenished stock — legacy
+  processed the pending queue in arrival order), and re-dispatches each via the **existing**
+  `ApprovalGateway` → outbox → `ApprovedOrderQueue` → inventory `FulfilmentService` pipeline. Zero new
+  fulfilment logic; the re-drive just re-enters the approve path.
+- **Why OPC owns the re-drive, not inventory.** Inventory holds no order read-model and OPC is the single
+  order-status writer (OPC invariant #1). The event carries only item+amount; OPC decides which orders to
+  retry. Inventory stays a pure fulfiller.
+- **Idempotency — dedup switched from eventId to orderId.** A re-driven `OrderApprovedEvent` gets a FRESH
+  `eventId`, so the old eventId-keyed `processed_event` ledger would NOT stop re-driving an order that
+  already shipped but is briefly still APPROVED (or two overlapping restocks). Replaced it with an
+  **`order_id`-keyed `fulfilled_order`** ledger (an order ships at most once): `FulfilmentService` skips if
+  `isFulfilled(orderId)` and records `markFulfilled(orderId)` in the same flow as the decrement; a
+  short-stock delivery marks nothing so it can retry after the next restock. `schema.sql` drops the stale
+  `processed_event` table. This catches BOTH plain JMS redelivery and restock re-drive.
+- **No new order state / no partial shipment.** Still all-or-nothing (H1) and still no `SHIPPED_PART`
+  (OPC invariant #2). A restock that only partially covers a backorder re-drives, short-ships again
+  (`shipped=false`), and stays APPROVED for the next restock — the backorder simply persists, exactly as a
+  never-satisfiable legacy pending PO would.
+- **KEEP JMS / at-least-once / hexagonal all preserved.** `RestockEvent` registered in
+  `MessagingConfig.TYPE_IDS` + `EventSerializationTest`; publish is via the shared `MessagePublisher`; the
+  OPC re-drive runs in one `@Transactional` so all outbox rows commit together (OPC invariant #3). Tests:
+  inventory `FulfilmentServiceIdempotencyTest` (orderId dedup catches fresh-eventId re-drive), OPC
+  `AdminServiceTest` (re-drive re-dispatches all APPROVED oldest-first; no-op when none).

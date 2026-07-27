@@ -71,6 +71,7 @@ is `MessagingConfig.TYPE_IDS` (`_type` header → class) — producers and consu
 | `ApprovedOrderQueue` | queue | `OrderApprovedEvent` | OPC approval → inventory-service (fulfil) |
 | `InvoiceTopic` | topic | `InvoiceEvent` | inventory ship → OPC (COMPLETED) **and** notification (email) |
 | `OrderStatusTopic` | topic | `OrderStatusEvent` | OPC approve/deny/complete → notification (status email) |
+| `RestockTopic` | topic | `RestockEvent` | inventory restock → OPC re-drives APPROVED backorders (retry-on-restock, H2) |
 
 Every event carries an `EventMeta` envelope (`eventId`, `type`, `occurredAt`, `correlationId`). When you
 add or change an event, update `TYPE_IDS` **and** the `EventSerializationTest` round-trip test. New fields

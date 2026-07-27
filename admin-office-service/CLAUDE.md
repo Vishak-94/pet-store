@@ -26,7 +26,7 @@ legacy-faithful public surface. Keep them.
 - **Approval console UI** (`/warehouse/orders`, Thymeleaf) — lists PENDING orders and offers approve/deny.
 - **Admin JSON API** (`/api/orders/**`, `/api/sales`) — a thin proxy over the OPC facade.
 - **Staff login** (`/warehouse/login`) — delegates credential check to `auth-service`; drops the RS256
-  token in a `jwt` cookie.
+  token in a `jwt-warehouse` cookie.
 
 It persists nothing and runs no JMS listener. Every order operation is a call through
 `OrderProcessingClient` to the OPC on :8088.
@@ -72,11 +72,20 @@ run step 1. Run the whole fleet with `../run-all.sh` (needs auth-service :8086 a
    ADMIN itself — this console is not the sole gate.
 4. **Verify-only auth.** Holds only the bundled RS256 **public** key (`auth-client`) and cannot mint tokens.
    Login delegates to `auth-service`. No credential store here.
-5. **Token plumbing differs by surface.** The UI reads the JWT from the `jwt` **cookie**
-   (`WarehouseUiController.jwt`); the JSON API reads it from the `Authorization` **header**
-   (`WarehouseApiController.bearer`). Keep both when adding endpoints.
-6. **Stateless security, CSRF disabled** (`SessionCreationPolicy.STATELESS`). Auth entry point returns JSON
-   401/403 for `/api/**` and redirects to `/warehouse/login` for UI routes — preserve that split.
+5. **Token plumbing differs by surface.** The UI reads the JWT from the **`jwt-warehouse`** cookie
+   (`WarehouseUiController.jwt`, matching `WarehouseLoginController.JWT_COOKIE`); the JSON API reads it
+   from the `Authorization` **header** (`WarehouseApiController.bearer`). The cookie is a
+   service-specific name (not the shared `jwt`) + `/warehouse` path + `XSRF-WAREHOUSE` CSRF cookie so it
+   can't collide with the inventory console when both are open on `localhost`. Keep both when adding endpoints.
+6. **Stateless security; CSRF DISABLED (local-demo tradeoff).** `SessionCreationPolicy.STATELESS`;
+   `.csrf(csrf -> csrf.disable())`. CSRF was turned off to unblock the multi-console demo — the tokened
+   version rotated the XSRF cookie on every request (STATELESS + per-request re-auth →
+   `CsrfAuthenticationStrategy` rotation), so the form's token was stale by submit time → 403. The
+   `jwt-warehouse` cookie is `SameSite=Strict`, which blocks the classic cross-site POST in its place.
+   **Re-enable a stable (non-rotating) CSRF token before any non-local deploy** — see the security NOTE
+   in `SecurityConfig.filterChain`. The Bearer-authed JSON `/api/**` surface never used a token. Auth
+   entry point returns JSON 401/403 for `/api/**` and redirects to `/warehouse/login` for UI routes —
+   preserve that split.
 
 ## What it exposes → which service it calls
 
