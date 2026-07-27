@@ -31,6 +31,16 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
+        <!-- MongoDB store — the `mongo` Spring profile swaps the catalog read model from
+             file-based H2/JPA to MongoDB. Both adapters sit behind the same CatalogRepository
+             port; the active profile picks one (repository.jpa @Profile("!mongo") vs
+             repository.mongo @Profile("mongo")). The default (no profile / `h2`) keeps JPA.
+             Catalog is READ-ONLY, so no transactions/replica set are required (unlike OPC).
+             See DECISIONS.md + docs/CATALOG_MONGODB_SCHEMA.md. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-mongodb</artifactId>
+        </dependency>
 
         <!-- The client SDK — server reuses its DTOs + endpoint constants so the
              contract is single-sourced (server can't drift from what clients see). -->
@@ -55,7 +65,35 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Testcontainers MongoDB — the Mongo adapter parity tests boot a real mongo:7
+             container so the store's queries (locale reads, ordering, pagination, search)
+             are exercised true-to-prod. Needs Docker/Colima at test time; the JPA
+             (@SpringBootTest on H2) tests stay fully in-VM and need no container. The
+             MongoTestBase guard skips (not fails) the Mongo suite when Docker is absent. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mongodb</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Testcontainers BOM aligns the mongodb + junit-jupiter module versions. -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>1.20.4</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
         <sourceDirectory>${project.basedir}/src</sourceDirectory>

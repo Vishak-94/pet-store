@@ -498,3 +498,104 @@ not code") holds.
   OPC re-drive runs in one `@Transactional` so all outbox rows commit together (OPC invariant #3). Tests:
   inventory `FulfilmentServiceIdempotencyTest` (orderId dedup catches fresh-eventId re-drive), OPC
   `AdminServiceTest` (re-drive re-dispatches all APPROVED oldest-first; no-op when none).
+
+## Catalog → MongoDB + separate search service (ROADMAP — step 1 now BUILT)
+
+Design discussion recorded so the intent survives. **Status update:** step (1) below — the
+profile-selectable Mongo `CatalogRepository` adapter — is now **implemented** (see the "Catalog Mongo
+adapter — data model (DECIDED)" ADR immediately after this section, and `docs/CATALOG_MONGODB_SCHEMA.md`).
+Steps (2)–(4) (admin write path, Elasticsearch projector, caching) remain ROADMAP, not coded. The catalog
+still runs on the locale-split H2 schema **by default**; Mongo is opt-in via `SPRING_PROFILES_ACTIVE=mongo`.
+Captured because it changes the target architecture and directly informs the "make search faster" question.
+
+- **Target shape (real-world separation of concerns).** Two read-only-to-shoppers stores, each owned by a
+  writer service:
+  - **catalog-service → MongoDB** as the *source of truth* for product/category/item data (the PIM
+    concern: low-churn, human-curated, localized). Denormalize the locale-split relational tables into a
+    nested document per product (base + `details` keyed by locale + its items) — a Mongo-idiomatic
+    aggregate, not a 1:1 table port (catalog is a *weak* Mongo fit relationally; only worth it as a nested
+    aggregate).
+  - **search-service → Elasticsearch** as a *derived read model*, owning only the search surface.
+- **Who writes what (bounded contexts).** catalog-service owns catalog *content* writes (add/remove/edit
+  products & categories). **inventory-service owns stock levels only** — stock is high-churn and MUST NOT
+  be baked into the projected catalog document; the storefront composes stock at read time (already true:
+  the item-page badge + `/api/stock` stepper cap). Do not let inventory write catalog documents.
+- **Projection = write-once + async, NOT parallel dual-write (the key correction).** The instinct to
+  "write to Mongo and Elasticsearch in parallel" is the classic **dual-write anti-pattern** — the two
+  stores diverge permanently the first time one write fails. Instead: write **once** to Mongo (source of
+  truth), then project to Elasticsearch **asynchronously** via a change stream / transactional outbox /
+  Debezium-style connector. Eventual consistency (sub-second) is fine for search. This mirrors the OPC
+  outbox pattern already in the repo.
+- **Multi-level caching** in catalog-service (in-process + shared) in front of Mongo for the hot read path.
+- **Staged rollout order (each step shippable):** **(1) ☑ DONE** — Mongo `CatalogRepository` adapter behind
+  the existing port under `@Profile("mongo")` (exact precedent: OPC `OrderStore`/`OutboxStore` H2↔Mongo),
+  H2 stays the default; (2) build catalog-service's admin write path; (3) add the change-stream/outbox
+  projector → search-service on Elasticsearch; (4) add caching.
+- **Precedent it reuses:** ADR "Swappability guarantee" above + OPC's profile-selectable Mongo adapters
+  (`docs/MONGODB_SCHEMA.md`). No domain/service/controller changes — new adapter package only.
+
+## Catalog Mongo adapter — data model (DECIDED, built)
+
+The step-(1) adapter is implemented in `com.petstore.catalog.repository.mongo` and documented attribute-by-attribute
+in `docs/CATALOG_MONGODB_SCHEMA.md`. Key decisions:
+
+- **Data model = Option C (three collections, embedded per-locale map).** `categories` / `products` / `items`,
+  each collapsing the legacy base + `_details` `(id, locale)` split into ONE document with an embedded
+  `details` map keyed by locale (`en_US`/`ja_JP`/`zh_CN`). Chosen over (A) a 1:1 table port (keeps the join
+  pain, un-idiomatic) and (B) one giant nested category→product→item aggregate (unbounded growth, whole-tree
+  rewrites on any edit). Option C keeps each entity independently editable while making every read a
+  **single-collection** query — no `$lookup`.
+- **Two denormalizations onto the item document** so `getItem` and search stay single-collection:
+  `categoryId` (legacy resolved it via `item→product→catid`, parity item M2) and per-locale `productName`
+  (legacy search matched over the product name, parity item H6). Both source fields are low-churn, so keeping
+  the copy correct is cheap.
+- **Search via product-name denormalization, NOT `$lookup`.** Same H6 semantics (whitespace-tokenized,
+  per-token case-insensitive substring over productName + categoryId + descn, tokens OR-joined, attributes
+  never searched, blank → empty) — only the mechanism differs (Mongo `$regex` with `Pattern.quote` + `"i"`).
+- **Only production-code edit outside the new package:** `@Profile("!mongo")` on `JpaCatalogRepository` so
+  exactly one adapter is active per profile. Domain / `CatalogService` / `CatalogApiController` / client SDK
+  are untouched — the swap is invisible above the port.
+- **Seeding:** MongoDB has no `data.sql` hook, so `MongoCatalogSeeder` (`@Profile("mongo")`,
+  `ApplicationReadyEvent`) loads the same 3-locale seed; **idempotent** (no-op if `categories` non-empty) so
+  restarts against the persistent volume don't clobber mongo-express edits.
+- **Tests:** `MongoCatalogRepositoryTest` (16 cases) mirrors `CatalogCharacterizationTest` + adds ja_JP/zh_CN
+  reads, against a Testcontainers `mongo:7.0`; `assumeTrue(dockerAvailable)` keeps `mvn install` green
+  without Docker (JPA characterization still covers the default profile).
+
+- **Future-evolution trigger — the 100-language tipping point.** Option C embeds every locale in one
+  document, so document size grows linearly with locale count. This is fine at the current 3 locales (and
+  well within MongoDB's 16 MB hard limit for a long time). **The documented trigger to revisit:** when the
+  locale count grows large (order ~100 languages) OR translations become high-churn / independently managed,
+  **externalize translations** — move `details.<locale>` into a separate `translations` collection keyed by
+  `(entityId, locale)` and fetch only the requested locale, so a read no longer over-fetches 99 unused
+  languages into the working set (the real cost is RAM/working-set bloat and over-fetch, long before the
+  16 MB ceiling). Not done now (YAGNI at 3 locales, and it reintroduces a per-read lookup); recorded so the
+  tipping point is a deliberate decision, not a surprise.
+
+## Search query & why an index won't speed it up (analysis — no change made)
+
+The storefront search (`ItemSearchRepositoryImpl.search`, catalog-service
+`SpringDataCatalogRepositories.java`) is a runtime-assembled JPQL 4-way join over
+`item_details ⋈ item ⋈ product ⋈ product_details`, filtered by `id.locale = :locale`, ordered by
+`id.itemid`. It whitespace-tokenizes the keyword and, per token, OR-matches **case-insensitive
+`lower(col) LIKE '%token%'`** across three columns: `product_details.name`, `product.catid`,
+`item_details.descn` (tokens OR-joined). Attributes are NOT searched; blank query → empty page. This is
+pinned parity item **H6**.
+
+- **A normal B-tree index cannot accelerate this** and was deliberately NOT added. Two index-defeating
+  properties: (1) the **leading wildcard** `%token%` — a B-tree can only serve prefix (`token%`) matches;
+  (2) the `lower(...)` wrapper — a plain column index doesn't match the function expression. Adding such an
+  index would be dead weight the planner ignores.
+- **What would actually help** (all deferred): an H2 **full-text index** (`FT_CREATE_INDEX`/Lucene) — but
+  that changes search *semantics* from substring to tokenized/relevance, **diverging from H6** (needs a
+  parity decision + test updates); it's a mini-Elasticsearch. The proper fix is the **Elasticsearch
+  projection** in the ROADMAP section above — which exists precisely because substring search is
+  fundamentally un-indexable on a relational B-tree.
+- **Decision for now: no index.** At current scale (handful of seeded items) the `LIKE` scan is fine; the
+  join/locale access path is already covered by the composite primary keys on the `_details` tables. A
+  real speedup means changing what "search" means, i.e. the search-service work — not a schema index.
+- **Same conclusion on the Mongo profile.** The Mongo adapter's `searchItems` uses `$regex` with a leading
+  `.*token.*` and the case-insensitive `"i"` flag — which is *also* un-indexable by a Mongo B-tree index for
+  the same two reasons (leading wildcard + case-insensitivity). A Mongo **text index** (`$text`) would help
+  but, like H2 full-text, changes substring→tokenized semantics and diverges from H6 — same parity tradeoff.
+  So no search index on either store; the real fix stays the Elasticsearch projection (step 3).

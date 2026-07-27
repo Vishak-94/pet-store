@@ -34,12 +34,17 @@ com.petstore.catalog
 │   └── Page                       # pagination VO; Page.EMPTY_PAGE canonical empty result
 ├── repository/
 │   ├── CatalogRepository          # the PORT (interface) — 7 read methods
-│   └── jpa/                       # the ADAPTER
-│       ├── JpaCatalogRepository            # implements the port; entities → domain
-│       ├── SpringDataCatalogRepositories   # Spring Data interfaces + ItemSearchRepository{,Impl}
-│       ├── CategoryDetailEntity            # locale-split entities (@IdClass = (id, locale))
-│       ├── ProductBaseEntity / ProductDetailEntity
-│       └── ItemBaseEntity / ItemDetailEntity
+│   ├── jpa/                       # the DEFAULT adapter — @Profile("!mongo")
+│   │   ├── JpaCatalogRepository            # implements the port; entities → domain
+│   │   ├── SpringDataCatalogRepositories   # Spring Data interfaces + ItemSearchRepository{,Impl}
+│   │   ├── CategoryDetailEntity            # locale-split entities (@IdClass = (id, locale))
+│   │   ├── ProductBaseEntity / ProductDetailEntity
+│   │   └── ItemBaseEntity / ItemDetailEntity
+│   └── mongo/                     # the OPT-IN adapter — @Profile("mongo")
+│       ├── MongoCatalogRepository          # implements the port via MongoTemplate
+│       ├── CategoryDocument / ProductDocument / ItemDocument  # embedded per-locale `details` map
+│       ├── MongoSchema                     # collection + field-name constants
+│       └── MongoCatalogSeeder              # data.sql equivalent (idempotent, @Profile("mongo"))
 ├── service/CatalogService         # thin pass-through over the port (replaces CatalogEJB)
 └── web/CatalogApiController       # JSON API; maps CatalogServiceEndpoints constants
 ```
@@ -55,11 +60,43 @@ Java 21 required (`export JAVA_HOME="$(/usr/libexec/java_home -v 21)"`).
   `cd catalog-service && mvn -q clean install`
 - Client only: `cd catalog-service/client && mvn -q clean install`
 - App only (client already installed): `cd catalog-service/app && mvn -q clean package`
-- Run: `cd catalog-service/app && mvn spring-boot:run` (H2 in-memory, seeded from
-  `resources/schema.sql` + `resources/data.sql`; H2 console enabled).
+- Run (default = H2/JPA): `cd catalog-service/app && mvn spring-boot:run` (file H2 at
+  `./data/catalog`, seeded from `resources/schema.sql` + `resources/data.sql`; H2 console enabled).
+- Run on **MongoDB** (opt-in): `SPRING_PROFILES_ACTIVE=mongo mvn spring-boot:run` — needs the
+  docker-compose `mongo` service up (`docker compose up -d mongo mongo-express`); seeded by
+  `MongoCatalogSeeder`. See the **Persistence profiles** section below and
+  `../docs/CATALOG_MONGODB_SCHEMA.md`.
 - Tests (`app/test`): `CatalogCharacterizationTest` (pins legacy `CatalogService`
-  behaviour) and `CatalogApiTest` (pins the REST/JSON contract). Both are
-  characterization/parity tests — **do not weaken or disable them to go green.**
+  behaviour), `CatalogApiTest` (pins the REST/JSON contract), and
+  `repository/mongo/MongoCatalogRepositoryTest` (16 cases; Mongo adapter parity, Testcontainers
+  `mongo:7.0`, skips without Docker). All are characterization/parity tests — **do not weaken or
+  disable them to go green.**
+
+## Persistence profiles (H2 default ↔ MongoDB opt-in)
+
+Two `CatalogRepository` adapters live behind the port; exactly one is active per Spring profile
+(same pattern as OPC's `OrderStore`, `docs/MONGODB_SCHEMA.md`):
+
+| Profile | Adapter | Store | Selected by |
+|---|---|---|---|
+| default (none) | `jpa.JpaCatalogRepository` `@Profile("!mongo")` | file H2 + `data.sql` | nothing (default) |
+| `mongo` | `mongo.MongoCatalogRepository` `@Profile("mongo")` | MongoDB 7.0 (compose `mongo` :27018) | `SPRING_PROFILES_ACTIVE=mongo` |
+
+- **`application.yml` has two profile documents.** The `!mongo` doc keeps file H2 + `sql.init` +
+  H2 console and excludes the Mongo autoconfig; the `mongo` doc excludes DataSource/JPA/SqlInit
+  autoconfig and sets `spring.data.mongodb.uri` (`CATALOG_MONGODB_URI`, default
+  `mongodb://localhost:27018/petstore?directConnection=true`). Both starters are on the classpath.
+- **The ONLY production-code edit outside `repository/mongo/` is** `@Profile("!mongo")` on
+  `JpaCatalogRepository`. Domain / `CatalogService` / `CatalogApiController` / client SDK are
+  untouched — the swap is invisible above the port.
+- **Data model = Option C** (three collections, embedded per-locale `details` map; `categoryId`
+  + per-locale `productName` denormalized onto items so every read is single-collection, no
+  `$lookup`). Full attribute-by-attribute schema + the 100-language externalize-translations
+  tipping point: `../docs/CATALOG_MONGODB_SCHEMA.md` and `../DECISIONS.md`.
+- **Running the Mongo tests with Colima** (Docker Desktop-less): the socket + API-version dance is
+  `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`,
+  `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=$HOME/.colima/default/docker.sock`,
+  `TESTCONTAINERS_RYUK_DISABLED=true`, and `mvn ... -DargLine="-Dapi.version=1.44"`.
 
 ## Data model — locale-split tables
 

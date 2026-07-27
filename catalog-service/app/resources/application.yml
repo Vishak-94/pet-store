@@ -1,6 +1,45 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared config (all profiles). The catalog read model is profile-selectable:
+#   • default / no profile (or `h2`) → file-based H2 + JPA          (unchanged)
+#   • `mongo`                        → MongoDB (Option C: 3 collections, locale map embedded)
+# Both sit behind the CatalogRepository port; the active profile picks the adapter
+# beans (repository.jpa @Profile("!mongo") vs repository.mongo @Profile("mongo")).
+# Catalog is READ-ONLY, so — unlike OPC — no replica set/transactions are needed.
+# Run Mongo with:  SPRING_PROFILES_ACTIVE=mongo   (or --spring.profiles.active=mongo)
+# ─────────────────────────────────────────────────────────────────────────────
 spring:
   application:
     name: catalog-service
+
+server:
+  port: 8083
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.petstore: INFO
+
+# ─────────────────────────────────────────────────────────────────────────────
+# H2 store (DEFAULT — active whenever the `mongo` profile is NOT active). Keeps the
+# exact prior behaviour: file-based H2, JPA, schema.sql + idempotent data.sql seed.
+# Mongo autoconfig is excluded so the mongo starter on the classpath doesn't try to
+# connect at startup.
+# ─────────────────────────────────────────────────────────────────────────────
+---
+spring:
+  config:
+    activate:
+      on-profile: "!mongo"
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoRepositoriesAutoConfiguration
   datasource:
     # File-based H2 so catalog data SURVIVES restarts (was jdbc:h2:mem, wiped on shutdown).
     # AUTO_SERVER lets the H2 console / a second JVM attach to the same file. data.sql uses
@@ -21,15 +60,24 @@ spring:
     console:
       enabled: true
 
-server:
-  port: 8083
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-
-logging:
-  level:
-    com.petstore: INFO
+# ─────────────────────────────────────────────────────────────────────────────
+# MongoDB store (`mongo` profile). DB name `petstore`. JPA/DataSource autoconfig is
+# excluded so no H2 file or schema.sql runs. MongoCatalogSeeder loads the 3-locale
+# seed on first startup (idempotent — skips if the collections already hold data).
+# Host port 27018 + directConnection matches the repo docker-compose `mongo` service
+# (browsable via mongo-express on :8971). Overridable per env via CATALOG_MONGODB_URI.
+# ─────────────────────────────────────────────────────────────────────────────
+---
+spring:
+  config:
+    activate:
+      on-profile: mongo
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.sql.init.SqlInitializationAutoConfiguration
+  data:
+    mongodb:
+      uri: ${CATALOG_MONGODB_URI:mongodb://localhost:27018/petstore?directConnection=true}

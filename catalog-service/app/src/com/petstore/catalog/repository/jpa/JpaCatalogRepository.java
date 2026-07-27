@@ -5,6 +5,7 @@ import com.petstore.catalog.domain.Item;
 import com.petstore.catalog.domain.Page;
 import com.petstore.catalog.domain.Product;
 import com.petstore.catalog.repository.CatalogRepository;
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Repository;
@@ -21,8 +22,12 @@ import java.util.Optional;
  * Maps the locale-split entities to framework-free domain objects and preserves
  * the legacy contract: not-found lookups return {@link Optional#empty()} /
  * {@link Page#EMPTY_PAGE} (never null, never an error).
+ *
+ * <p>Active on the <b>default</b> profile only ({@code @Profile("!mongo")}); under the
+ * {@code mongo} profile the {@code repository.mongo} adapter serves the same port instead.
  */
 @Repository
+@Profile("!mongo")
 public class JpaCatalogRepository implements CatalogRepository {
 
     private final CategoryDetailRepository categoryDetails;
