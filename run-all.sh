@@ -27,6 +27,26 @@ start_broker() {
 }
 start_broker
 
+# 0b) MongoDB + mongo-express (OPC MongoDB track). BEST-EFFORT: no service depends on
+# Mongo yet, so a failure here WARNS but does not abort the fleet (unlike the broker).
+# mongo runs as a single-node replica set; its compose healthcheck self-initiates rs0.
+start_mongo() {
+  echo "==> starting mongo + mongo-express (containers)"
+  if ! docker compose up -d mongo mongo-express >/dev/null 2>&1; then
+    echo "    !! mongo containers failed to start — skipping (fleet continues); see 'docker compose logs mongo'" >&2
+    return 0
+  fi
+  # Wait for mongo to accept a TCP connection on :27018 (host mapping).
+  for i in $(seq 1 30); do
+    if nc -z localhost 27018 >/dev/null 2>&1; then
+      echo "    mongo up (:27018) · mongo-express UI: http://localhost:8971 (admin/pass)"; return 0
+    fi
+    sleep 1
+  done
+  echo "    !! mongo did not open :27018 in 30s — skipping (fleet continues)" >&2
+}
+start_mongo
+
 # Resolve a Java 21 runtime (the apps are compiled for Java 21 / class 61).
 # Prefer JAVA_HOME if it already points at a 21 JDK, else auto-detect via
 # /usr/libexec/java_home, else fall back to the Corretto 21 default path.
@@ -53,10 +73,25 @@ mkdir -p logs
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE-dev}"
 [ -n "$SPRING_PROFILES_ACTIVE" ] && echo "Spring profile: $SPRING_PROFILES_ACTIVE (H2 consoles enabled)"
 
-start() {  # name  jar  port  started-marker
-  local name=$1 jar=$2 port=$3 marker=$4
-  echo "==> starting $name (:$port)"
-  nohup "$JAVA" -jar "$jar" > "logs/$name.log" 2>&1 &
+# OPC persistence store: 'h2' (default, file-based) or 'mongo' (single-node rs0 :27018).
+# When 'mongo', ONLY order-processing-service gets the extra 'mongo' profile — every other
+# service stays on H2. Choosing mongo without a reachable mongo container will make OPC fail
+# to start (surfaced in logs/order-processing-service.log), so start_mongo above must have succeeded.
+OPC_STORE="${OPC_STORE-h2}"
+[ "$OPC_STORE" = "mongo" ] && echo "OPC store: mongo (order-processing-service runs on MongoDB :27018)"
+
+start() {  # name  jar  port  started-marker  [extra-profiles]
+  local name=$1 jar=$2 port=$3 marker=$4 extra=${5-}
+  # Layer any per-service profile (e.g. 'mongo') on top of the fleet-wide SPRING_PROFILES_ACTIVE,
+  # so only THIS service sees it. Empty 'extra' → the service inherits the global profile unchanged.
+  local profiles="$SPRING_PROFILES_ACTIVE"
+  if [ -n "$extra" ]; then
+    profiles="${profiles:+$profiles,}$extra"
+    echo "==> starting $name (:$port) [profiles: $profiles]"
+  else
+    echo "==> starting $name (:$port)"
+  fi
+  SPRING_PROFILES_ACTIVE="$profiles" nohup "$JAVA" -jar "$jar" > "logs/$name.log" 2>&1 &
   for i in $(seq 1 60); do
     grep -q "$marker" "logs/$name.log" 2>/dev/null && { echo "    $name up"; return 0; }
     sleep 1
@@ -73,7 +108,7 @@ start auth-service       auth-service/app/target/auth-service-1.0.0.jar       80
 # 3) domain + back-office services (connect to the broker + auth).
 start customer-service   customer-service/app/target/customer-service-1.0.0.jar   8081 "Started CustomerServiceApplication"
 start catalog-service    catalog-service/app/target/catalog-service-1.0.0.jar     8083 "Started CatalogServiceApplication"
-start order-processing-service order-processing-service/app/target/order-processing-service-1.0.0.jar 8088 "Started OrderProcessingApplication"
+start order-processing-service order-processing-service/app/target/order-processing-service-1.0.0.jar 8088 "Started OrderProcessingApplication" "$([ "$OPC_STORE" = "mongo" ] && echo mongo)"
 start admin-office-service admin-office-service/target/admin-office-service-1.0.0.jar 8082 "Started WarehouseServiceApplication"
 start inventory-service  inventory-service/target/inventory-service-1.0.0.jar     8085 "Started InventoryServiceApplication"
 start notification-service notification-service/target/notification-service-1.0.0.jar 8087 "Started NotificationServiceApplication"
@@ -104,7 +139,11 @@ echo "   customer DB          http://localhost:8081/h2-console   (jdbc:h2:file:.
 echo "   catalog DB           http://localhost:8083/h2-console   (jdbc:h2:file:./data/catalog)"
 echo "   inventory DB         http://localhost:8085/h2-console   (jdbc:h2:file:./data/inventory)"
 echo "   auth DB              http://localhost:8086/h2-console   (jdbc:h2:file:./data/auth)"
-echo "   order-processing DB  http://localhost:8088/h2-console   (jdbc:h2:file:./data/opc)"
+if [ "$OPC_STORE" = "mongo" ]; then
+  echo "   order-processing DB  MongoDB (:27018) — browse via mongo-express http://localhost:8971 (admin/pass)"
+else
+  echo "   order-processing DB  http://localhost:8088/h2-console   (jdbc:h2:file:./data/opc)"
+fi
 echo "     H2 login: user 'sa', password blank; paste the JDBC URL shown above (add ;AUTO_SERVER=TRUE)."
 echo "     All DBs now persist to ./data/ across restarts. Delete ./data/ for a clean slate."
 echo "----------------------------------------------------------------------"

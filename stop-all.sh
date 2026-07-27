@@ -10,9 +10,10 @@ for p in "${PORTS[@]}"; do
   fi
 done
 
-# Stop the externalized JMS broker container (started by run-all.sh).
+# Stop the container fleet started by run-all.sh: the JMS broker plus (best-effort) the
+# mongo + mongo-express containers. 'docker compose down' stops every compose service.
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  echo "stopping broker container"
+  echo "stopping broker + mongo containers"
   docker compose down >/dev/null 2>&1 || true
 fi
 echo "done."
