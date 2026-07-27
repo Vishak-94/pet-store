@@ -284,7 +284,7 @@ textbox(s, Inches(0.8), Inches(4.3), Inches(11.7), Inches(2.2), [
     ("Legacy J2EE 1.3 · 4 EARs · EJB 2.x CMP · JMS (XML) · Cloudscape   →   "
      "8 Spring Boot services · JPA · JMS (JSON) · H2/MongoDB",
      {"size": 15, "color": WHITE, "space_after": 12}),
-    ("45-minute session · ~30 min narrative + ~10 min live code + ~5 min Q&A",
+    ("Narrative walkthrough · live code · Q&A",
      {"size": 14, "color": RGBColor(0x9D, 0xB4, 0xD4)}),
 ])
 
@@ -292,22 +292,22 @@ textbox(s, Inches(0.8), Inches(4.3), Inches(11.7), Inches(2.2), [
 # 2 — AGENDA (with the 45-min budget)
 # ═══════════════════════════════════════════════════════════════════════════
 s = slide()
-title_bar(s, "Agenda", "How the 45 minutes are spent", tag="45 min")
+title_bar(s, "Agenda", "What we'll walk through")
 table(s, Inches(0.5), Inches(1.4), Inches(12.3), Inches(5.4), [
-    ["#", "Section", "Time"],
-    ["1", "The brief & what 'done' means", "2 min"],
-    ["2", "Legacy architecture — the starting point", "3 min"],
-    ["3", "Gaps in the legacy design (overview + 1 slide per gap)", "8 min"],
-    ["4", "Migration strategy & principles", "3 min"],
-    ["5", "Phased migration plan (7 phases)", "5 min"],
-    ["6", "JMS message migration — XML → JSON (Anti-Corruption Layer)", "4 min"],
-    ["7", "What we fixed — parity audit results", "4 min"],
-    ["8", "Target as-built architecture", "3 min"],
-    ["9", "Service inventory — summary + one slide per service", "8 min"],
-    ["10", "CODE WALKTHROUGH (live)", "10 min"],
-    ["11", "MongoDB stretch goal", "2 min"],
-    ["12", "Wrap-up & Q&A", "5 min"],
-], col_widths=[Inches(0.8), Inches(9.5), Inches(2.0)], fsize=13)
+    ["#", "Section"],
+    ["1", "The brief & what 'done' means"],
+    ["2", "Legacy architecture — the starting point"],
+    ["3", "Gaps in the legacy design (overview + 1 slide per gap)"],
+    ["4", "Migration strategy & principles"],
+    ["5", "Phased migration plan (7 phases)"],
+    ["6", "JMS message migration — XML → JSON (Anti-Corruption Layer)"],
+    ["7", "What we fixed — parity audit results"],
+    ["8", "Target as-built architecture"],
+    ["9", "Service inventory — summary + one slide per service"],
+    ["10", "CODE WALKTHROUGH (live)"],
+    ["11", "MongoDB stretch goal"],
+    ["12", "Wrap-up & Q&A"],
+], col_widths=[Inches(0.8), Inches(11.5)], fsize=13)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 3 — THE BRIEF
