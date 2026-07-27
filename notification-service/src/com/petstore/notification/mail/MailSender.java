@@ -8,5 +8,11 @@ package com.petstore.notification.mail;
  */
 public interface MailSender {
 
+    /**
+     * Deliver the composed email. The transport is adapter-defined: the default
+     * {@link LoggingMailSender} logs it; an SMTP adapter would actually send it.
+     *
+     * @param email the fully-composed email (to, subject, body)
+     */
     void send(Email email);
 }

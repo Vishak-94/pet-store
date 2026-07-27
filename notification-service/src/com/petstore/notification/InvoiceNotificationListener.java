@@ -34,6 +34,29 @@ public class InvoiceNotificationListener {
     // OPC each receive every invoice (pub/sub fan-out). Durable = an invoice sent while this service
     // is restarting is retained by the broker and delivered on reconnect, so the "Order Shipped"
     // email is never silently dropped.
+    /**
+     * Handle one invoice event off the InvoiceTopic: compose the customer email and "send" it
+     * (the default adapter logs it). {@code shipped=true} yields an "Order Shipped" mail;
+     * {@code shipped=false} (backorder) yields an "Order Delayed" mail. Idempotent — a
+     * redelivered invoice simply re-sends the same email.
+     *
+     * <p>Example inbound event (InvoiceTopic):
+     * <pre>{@code
+     * {
+     *   "meta": { "eventId": "evt-b71", "type": "Invoice", "correlationId": "corr-42" },
+     *   "orderId": "1001",
+     *   "userId": "j2ee",
+     *   "emailId": "buyer@example.com",
+     *   "shipped": true,
+     *   "totalPrice": 25.00
+     * }
+     * }</pre>
+     * Produces an email to {@code buyer@example.com} with subject
+     * {@code "Java Pet Store Order Shipped: 1001"} (or {@code "… Order Delayed: 1001"} when
+     * {@code shipped=false}).
+     *
+     * @param invoice the invoice event to notify the customer about
+     */
     @JmsListener(destination = Destinations.INVOICE_NAME, containerFactory = "topicFactory",
             subscription = "notification-invoice")
     public void onInvoice(InvoiceEvent invoice) {

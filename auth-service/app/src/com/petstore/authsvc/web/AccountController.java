@@ -63,7 +63,28 @@ public class AccountController {
      * legacy UserEJB validation guards (blank/length caps, barred wildcard chars), rejects
      * duplicates with 409, and enforces the privilege guard: an unauthenticated caller may mint
      * only a USER account — provisioning SUPPLIER/ADMIN requires a verified ADMIN token.
-     * Returns 201 {@code {userId, role, status:"provisioned"}}; 400/409/403 on the guard failures.
+     *
+     * <p>Example request (public registration — role omitted, defaults to USER):
+     * <pre>{@code
+     * POST /auth/accounts
+     * Content-Type: application/json
+     *
+     * {"userName": "jane", "password": "s3cret"}
+     * }</pre>
+     *
+     * <p>Example response (201):
+     * <pre>{@code
+     * {"userId": "6f1c...-uuid", "role": "USER", "status": "provisioned"}
+     * }</pre>
+     *
+     * <p>Error cases:
+     * <ul>
+     *   <li>{@code 400 Bad Request} — {@code {"error":"invalid_request"}} when userName is
+     *       blank, password empty, either exceeds 25 chars, or userName contains {@code %}/{@code *};</li>
+     *   <li>{@code 409 Conflict} — {@code {"error":"duplicate_account"}} when the userName exists;</li>
+     *   <li>{@code 403 Forbidden} — {@code {"error":"admin_required","detail":"..."}} when a
+     *       non-USER role is requested without a verified ADMIN token.</li>
+     * </ul>
      */
     @PostMapping("/auth/accounts")
     public ResponseEntity<Map<String, String>> provision(@RequestBody ProvisionRequest req) {

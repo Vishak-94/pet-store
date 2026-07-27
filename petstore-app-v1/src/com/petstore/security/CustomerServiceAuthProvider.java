@@ -31,6 +31,13 @@ public class CustomerServiceAuthProvider implements AuthenticationProvider {
         this.auth = auth;
     }
 
+    /**
+     * Verifies username/password by delegating to auth-service. On success returns a
+     * {@link UsernamePasswordAuthenticationToken} whose credential is the RS256 JWT and whose
+     * details is the stable customer userId; authorities are the token roles mapped to
+     * {@code ROLE_*}. Throws {@link BadCredentialsException} (generic message) when auth-service
+     * rejects the login.
+     */
     @Override
     public Authentication authenticate(Authentication authentication) {
         String username = authentication.getName();

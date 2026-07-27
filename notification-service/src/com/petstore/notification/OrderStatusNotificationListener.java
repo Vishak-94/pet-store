@@ -36,6 +36,30 @@ public class OrderStatusNotificationListener {
     // second subscriber (durable+shared factory keys the subscription by NAME, not clientId) gets
     // its own copy. Durable = a status change emitted while this service is down is retained and
     // delivered on reconnect, so approval/denial/completion emails survive a restart.
+    /**
+     * Handle one order-status event off the OrderStatusTopic: compose the matching customer
+     * email and "send" it (default adapter logs it). COMPLETED uses the dedicated "Order
+     * COMPLETED" subject; APPROVED/DENIED use the generic "Order Status" subject. Idempotent —
+     * a redelivered status re-sends the same email.
+     *
+     * <p>Example inbound event (OrderStatusTopic):
+     * <pre>{@code
+     * {
+     *   "meta": { "eventId": "evt-c92", "type": "OrderStatus", "correlationId": "corr-42" },
+     *   "orderId": "1001",
+     *   "userId": "j2ee",
+     *   "emailId": "buyer@example.com",
+     *   "status": "APPROVED",
+     *   "totalPrice": 25.00
+     * }
+     * }</pre>
+     * Produces an email to {@code buyer@example.com} with subject
+     * {@code "Java Pet Store Order Status: 1001"} ("has been approved …"). A {@code "DENIED"}
+     * status yields the same subject ("has been declined"); {@code "COMPLETED"} yields subject
+     * {@code "Java Pet Store Order COMPLETED: 1001"}.
+     *
+     * @param event the order-status change to notify the customer about
+     */
     @JmsListener(destination = Destinations.ORDER_STATUS_NAME, containerFactory = "topicFactory",
             subscription = "notification-order-status")
     public void onStatus(OrderStatusEvent event) {

@@ -49,7 +49,21 @@ public class CustomerController {
         this.customerClient = customerClient;
     }
 
-    /** Shows the account-edit form, pre-filled from the current customer profile. */
+    /**
+     * Shows the account-edit form, pre-filled from the current customer profile (read from
+     * customer-service with the session JWT). Authenticated customers only.
+     *
+     * <pre>{@code
+     * GET /customer
+     * (identity + Bearer token from the session Authentication)
+     *
+     * 200 OK  renders update_customer.html
+     *   model: customer = {account:{givenName:"J", familyName:"Doe", ...}, profile:{...}, card:{...}}
+     *                      // null if the token expired or customer-service is unavailable
+     * }</pre>
+     *
+     * <p>Anonymous requests are redirected to {@code /login} by SecurityConfig before reaching here.
+     */
     @GetMapping("/customer")
     public String editForm(Authentication auth, Model model) {
         model.addAttribute(ATTR_CUSTOMER, fetchCustomer(auth).orElse(null));
@@ -60,6 +74,21 @@ public class CustomerController {
      * Applies the edits — updates account, profile and card via the SDK (one legacy
      * UPDATE screen → the three SDK operations). Card is only touched when a number
      * is supplied (legacy left an untouched card alone).
+     *
+     * <pre>{@code
+     * POST /customer
+     *   form: givenName=Jane&familyName=Doe&email=jane@x.com&telephone=555-0100
+     *         &street1=1+Main+St&city=Palo+Alto&state=CA&zipCode=94301&country=US
+     *         &language=en_US&favoriteCategory=DOGS&myListPreference=true&bannerPreference=false
+     *         &cardNumber=4111...&cardType=Visa&cardExpiry=12/29   // card fields optional
+     *
+     * 200 OK  renders update_customer.html
+     *   model: updated=true, customer={...refreshed profile...}
+     * }</pre>
+     *
+     * <p>Edge cases (re-render update_customer.html with an {@code error} message, no redirect):
+     * expired/absent token → "session expired"; customer-service 400 → "invalid details";
+     * any other RestClientException → "service unavailable".
      */
     @PostMapping("/customer")
     public String update(Authentication auth,

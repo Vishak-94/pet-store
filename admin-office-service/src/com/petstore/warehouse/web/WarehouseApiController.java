@@ -46,6 +46,26 @@ public class WarehouseApiController {
         return h != null ? h : "";
     }
 
+    /**
+     * List order ids for a workflow status (defaults to the PENDING review queue).
+     * Reads the admin's JWT from the {@code Authorization} header and DELEGATES to the
+     * OPC ({@link OrderProcessingClient#ordersByStatus}) — this service owns no data.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/orders?status=PENDING
+     * Authorization: Bearer <admin JWT>
+     * }</pre>
+     *
+     * <p>Example response (the {@link OrdersByStatus} shape):
+     * <pre>{@code
+     * HTTP/1.1 200 OK
+     * { "status": "PENDING", "orderIds": ["1001", "1002"], "count": 2 }
+     * }</pre>
+     *
+     * <p>Errors: 401/403 if not an ADMIN (re-enforced by the OPC); 502/503 if the OPC is
+     * unreachable/erroring (mapped by {@code ApiExceptionHandler}).
+     */
     @GetMapping(OrderProcessingEndpoints.ORDERS)
     public OrdersByStatus ordersByStatus(
             @RequestParam(value = OrderProcessingEndpoints.PARAM_STATUS, defaultValue = DEFAULT_STATUS) String status,
@@ -53,18 +73,82 @@ public class WarehouseApiController {
         return opc.ordersByStatus(status, bearer(req));
     }
 
+    /**
+     * Approve a single order. DELEGATES to {@link OrderProcessingClient#approve} (the OPC
+     * performs the actual PENDING&rarr;APPROVED transition and event emission); this method
+     * just echoes the outcome.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * POST /api/orders/1001/approve
+     * Authorization: Bearer <admin JWT>
+     * }</pre>
+     *
+     * <p>Example response:
+     * <pre>{@code
+     * HTTP/1.1 200 OK
+     * { "orderId": "1001", "status": "APPROVED" }
+     * }</pre>
+     *
+     * <p>Errors: 401/403 if not ADMIN; 502/503 if the OPC is unreachable/erroring.
+     */
     @PostMapping(OrderProcessingEndpoints.ORDER_APPROVE)
     public ResponseEntity<Map<String, String>> approve(@PathVariable String id, HttpServletRequest req) {
         opc.approve(id, bearer(req));
         return ResponseEntity.ok(Map.of(KEY_ORDER_ID, id, KEY_STATUS, STATUS_APPROVED));
     }
 
+    /**
+     * Deny a single order. DELEGATES to {@link OrderProcessingClient#deny} (the OPC performs
+     * the PENDING&rarr;DENIED transition and event emission); this method echoes the outcome.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * POST /api/orders/1001/deny
+     * Authorization: Bearer <admin JWT>
+     * }</pre>
+     *
+     * <p>Example response:
+     * <pre>{@code
+     * HTTP/1.1 200 OK
+     * { "orderId": "1001", "status": "DENIED" }
+     * }</pre>
+     *
+     * <p>Errors: 401/403 if not ADMIN; 502/503 if the OPC is unreachable/erroring.
+     */
     @PostMapping(OrderProcessingEndpoints.ORDER_DENY)
     public ResponseEntity<Map<String, String>> deny(@PathVariable String id, HttpServletRequest req) {
         opc.deny(id, bearer(req));
         return ResponseEntity.ok(Map.of(KEY_ORDER_ID, id, KEY_STATUS, STATUS_DENIED));
     }
 
+    /**
+     * Fetch full order detail. DELEGATES to {@link OrderProcessingClient#getOrder};
+     * returns 200 with the {@link com.petstore.opc.client.OrderDtos.OrderView} or 404 when
+     * the OPC has no such order.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/orders/1001
+     * Authorization: Bearer <admin JWT>
+     * }</pre>
+     *
+     * <p>Example response (the {@code OrderView} shape):
+     * <pre>{@code
+     * HTTP/1.1 200 OK
+     * {
+     *   "orderId": "1001", "userId": "jdoe", "emailId": "jane@example.com",
+     *   "locale": "en_US", "totalPrice": 129.98, "status": "PENDING",
+     *   "lines": [
+     *     { "itemId": "EST-1", "productId": "FELV-01", "categoryId": "CATS",
+     *       "quantity": 2, "unitPrice": 64.99 }
+     *   ]
+     * }
+     * }</pre>
+     *
+     * <p>Errors: 404 if no such order; 401/403 if not ADMIN; 502/503 if the OPC is
+     * unreachable/erroring.
+     */
     @GetMapping(OrderProcessingEndpoints.ORDER_BY_ID)
     public ResponseEntity<?> order(@PathVariable String id, HttpServletRequest req) {
         return opc.getOrder(id, bearer(req))
@@ -72,14 +156,66 @@ public class WarehouseApiController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    /** Atomic batch approval (legacy updateOrders/OrderApproval) — delegates to the OPC. */
+    /**
+     * Atomic batch approval (legacy updateOrders/OrderApproval) — DELEGATES to
+     * {@link OrderProcessingClient#updateOrders}. The OPC applies every status change in one
+     * transaction (all-or-nothing). Returns 200 with an empty body on success.
+     *
+     * <p>Example request (the {@link OrderApprovalDto} shape; at least one change required):
+     * <pre>{@code
+     * POST /api/orders/approvals
+     * Authorization: Bearer <admin JWT>
+     * Content-Type: application/json
+     *
+     * {
+     *   "orders": [
+     *     { "orderId": "1001", "newStatus": "APPROVED" },
+     *     { "orderId": "1002", "newStatus": "DENIED" }
+     *   ]
+     * }
+     * }</pre>
+     *
+     * <p>Example response:
+     * <pre>{@code
+     * HTTP/1.1 200 OK
+     * }</pre>
+     *
+     * <p>Errors: 400 on an empty batch or a blank {@code orderId}/{@code newStatus}
+     * (bean-validation); 401/403 if not ADMIN; 502/503 if the OPC is unreachable/erroring.
+     */
     @PostMapping(OrderProcessingEndpoints.ORDER_APPROVALS)
     public ResponseEntity<Void> updateOrders(@RequestBody OrderApprovalDto approval, HttpServletRequest req) {
         opc.updateOrders(approval, bearer(req));
         return ResponseEntity.ok().build();
     }
 
-    /** Sales aggregation over a date range (legacy getChartInfo) — delegates to the OPC. */
+    /**
+     * Sales aggregation over a date range (legacy getChartInfo) — DELEGATES to
+     * {@link OrderProcessingClient#sales}. {@code start}/{@code end} are required; the
+     * optional {@code category} switches the grouping (present &rarr; group by item within
+     * that category; absent &rarr; group by category).
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/sales?start=2026-01-01&end=2026-03-31&category=DOGS
+     * Authorization: Bearer <admin JWT>
+     * }</pre>
+     *
+     * <p>Example response (the {@link SalesReportDto} shape):
+     * <pre>{@code
+     * HTTP/1.1 200 OK
+     * {
+     *   "groupBy": "item",
+     *   "buckets": [
+     *     { "key": "EST-6", "revenue": 1899.85, "quantity": 5 },
+     *     { "key": "EST-7", "revenue": 640.00, "quantity": 8 }
+     *   ]
+     * }
+     * }</pre>
+     *
+     * <p>Errors: 400 if {@code start}/{@code end} are missing; 401/403 if not ADMIN;
+     * 502/503 if the OPC is unreachable/erroring.
+     */
     @GetMapping(OrderProcessingEndpoints.SALES)
     public SalesReportDto sales(
             @RequestParam(OrderProcessingEndpoints.PARAM_START) String start,

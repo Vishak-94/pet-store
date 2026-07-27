@@ -51,6 +51,7 @@ public class CartService {
         cart.addItem(cartId(), itemId, qty);
     }
 
+    /** Removes an item's line from the cart entirely (no-op if it isn't present). */
     public void deleteItem(String itemId) {
         cart.deleteItem(cartId(), itemId);
     }
@@ -87,6 +88,7 @@ public class CartService {
         return cart.view(cartId()).subTotal();
     }
 
+    /** Clears every line from the current cart (called after a successful checkout). */
     public void empty() {
         cart.empty(cartId());
     }

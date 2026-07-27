@@ -49,6 +49,34 @@ public class CustomerController {
      * Register a new customer (public): validate the required field set, provision a USER
      * credential in auth-service, and store the aggregate keyed by the returned userId.
      * Returns 201 with {@code {userId, status:"registered"}}; 400 on missing fields, 409 on duplicate.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * POST /register
+     * Content-Type: application/json
+     *
+     * {
+     *   "userName": "jdoe",
+     *   "password": "s3cret",
+     *   "account": {
+     *     "givenName": "Jane", "familyName": "Doe",
+     *     "email": "jane@example.com", "telephone": "555-0100",
+     *     "streetName1": "1 Main St", "streetName2": null,
+     *     "city": "Portland", "state": "OR", "zipCode": "97201", "country": "USA"
+     *   },
+     *   "creditCard": { "cardNumber": "4111 1111 1111 1111", "cardType": "VISA", "expiryDate": "12/29" }
+     * }
+     * }</pre>
+     *
+     * <p>Example response:
+     * <pre>{@code
+     * HTTP/1.1 201 Created
+     * { "userId": "8f3c...", "status": "registered" }
+     * }</pre>
+     *
+     * <p>Errors: 400 if a required field is missing/blank (see {@link #requireRegistrationFields})
+     * or bean-validation fails (e.g. malformed {@code email}, {@code password} shorter than 4, an
+     * over-cap field); 409 if the {@code userName} is already taken in auth-service.
      */
     @PostMapping(CustomerServiceEndpoints.REGISTER)
     public ResponseEntity<Map<String, String>> register(@Valid @RequestBody CustomerDtos.RegisterRequest req) {
@@ -61,7 +89,38 @@ public class CustomerController {
                         CustomerServiceEndpoints.FIELD_STATUS, STATUS_REGISTERED));
     }
 
-    /** Fetch a customer aggregate (owner or ADMIN only); 404 when no such customer. Card masked on read. */
+    /**
+     * Fetch a customer aggregate (owner or ADMIN only); 404 when no such customer. Card masked on read.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /customer/8f3c...
+     * Authorization: Bearer <caller session JWT>
+     * }</pre>
+     *
+     * <p>Example response (the {@link CustomerDtos.CustomerView} shape — {@code cardMasked}
+     * never exposes the raw PAN):
+     * <pre>{@code
+     * HTTP/1.1 200 OK
+     * {
+     *   "userId": "8f3c...",
+     *   "account": {
+     *     "givenName": "Jane", "familyName": "Doe", "email": "jane@example.com",
+     *     "telephone": "555-0100", "streetName1": "1 Main St", "streetName2": null,
+     *     "city": "Portland", "state": "OR", "zipCode": "97201", "country": "USA",
+     *     "status": "active"
+     *   },
+     *   "profile": {
+     *     "preferredLanguage": "en_US", "favoriteCategory": null,
+     *     "myListPreference": true, "bannerPreference": true
+     *   },
+     *   "cardMasked": "**** **** **** 1111"
+     * }
+     * }</pre>
+     *
+     * <p>Errors: 401 if unauthenticated; 403 if the caller is neither the owner nor ADMIN
+     * (IDOR guard, see {@link #requireOwnerOrAdmin}); 404 if no such customer.
+     */
     @GetMapping(CustomerServiceEndpoints.CUSTOMER)
     public CustomerDtos.CustomerView get(@PathVariable String id, Authentication auth) {
         requireOwnerOrAdmin(id, auth);
@@ -70,7 +129,28 @@ public class CustomerController {
         return toView(c);
     }
 
-    /** Replace the account/contact slice (owner or ADMIN); profile + card preserved. Returns refreshed view. */
+    /**
+     * Replace the account/contact slice (owner or ADMIN); profile + card preserved. Returns refreshed view.
+     *
+     * <p>Example request (the {@link CustomerDtos.AccountDto} shape):
+     * <pre>{@code
+     * PUT /customer/8f3c.../account
+     * Authorization: Bearer <caller session JWT>
+     * Content-Type: application/json
+     *
+     * {
+     *   "givenName": "Jane", "familyName": "Doe", "email": "jane.doe@example.com",
+     *   "telephone": "555-0111", "streetName1": "2 Elm St", "streetName2": "Apt 4",
+     *   "city": "Portland", "state": "OR", "zipCode": "97202", "country": "USA"
+     * }
+     * }</pre>
+     *
+     * <p>Example response: 200 OK with the refreshed {@link CustomerDtos.CustomerView}
+     * (same shape as {@link #get}, with the updated account slice).
+     *
+     * <p>Errors: 400 on a bean-validation violation (e.g. malformed email, over-cap
+     * {@code zipCode}); 401 unauthenticated; 403 non-owner/non-ADMIN; 404 no such customer.
+     */
     @PutMapping(CustomerServiceEndpoints.ACCOUNT)
     public CustomerDtos.CustomerView updateAccount(@PathVariable String id, @Valid @RequestBody CustomerDtos.AccountDto dto,
                                                    Authentication auth) {
@@ -78,7 +158,28 @@ public class CustomerController {
         return toView(customers.updateAccount(id, toAccount(dto)));
     }
 
-    /** Replace the profile-preferences slice (owner or ADMIN); account + card preserved. Returns refreshed view. */
+    /**
+     * Replace the profile-preferences slice (owner or ADMIN); account + card preserved. Returns refreshed view.
+     *
+     * <p>Example request (the {@link CustomerDtos.ProfileDto} shape; the two booleans
+     * are primitives so they always serialize):
+     * <pre>{@code
+     * PUT /customer/8f3c.../profile
+     * Authorization: Bearer <caller session JWT>
+     * Content-Type: application/json
+     *
+     * {
+     *   "preferredLanguage": "en_US", "favoriteCategory": "DOGS",
+     *   "myListPreference": true, "bannerPreference": false
+     * }
+     * }</pre>
+     *
+     * <p>Example response: 200 OK with the refreshed {@link CustomerDtos.CustomerView}
+     * carrying the updated profile slice.
+     *
+     * <p>Errors: 400 on a bean-validation violation (over-cap {@code preferredLanguage}/
+     * {@code favoriteCategory}); 401 unauthenticated; 403 non-owner/non-ADMIN; 404 no such customer.
+     */
     @PutMapping(CustomerServiceEndpoints.PROFILE)
     public CustomerDtos.CustomerView updateProfile(@PathVariable String id, @Valid @RequestBody CustomerDtos.ProfileDto dto,
                                                    Authentication auth) {
@@ -88,7 +189,25 @@ public class CustomerController {
         return toView(customers.updateProfile(id, p));
     }
 
-    /** Replace the credit-card slice (owner or ADMIN); account + profile preserved. Card masked in the returned view. */
+    /**
+     * Replace the credit-card slice (owner or ADMIN); account + profile preserved. Card masked in the returned view.
+     *
+     * <p>Example request (the {@link CustomerDtos.CardDto} shape):
+     * <pre>{@code
+     * PUT /customer/8f3c.../card
+     * Authorization: Bearer <caller session JWT>
+     * Content-Type: application/json
+     *
+     * { "cardNumber": "5555 5555 5555 4444", "cardType": "MASTERCARD", "expiryDate": "06/30" }
+     * }</pre>
+     *
+     * <p>Example response: 200 OK with the refreshed {@link CustomerDtos.CustomerView};
+     * {@code cardMasked} reflects the new PAN's last four (e.g. {@code "**** **** **** 4444"}),
+     * never the raw number.
+     *
+     * <p>Errors: 400 on a bean-validation violation (over-cap {@code cardNumber}/{@code cardType}/
+     * {@code expiryDate}); 401 unauthenticated; 403 non-owner/non-ADMIN; 404 no such customer.
+     */
     @PutMapping(CustomerServiceEndpoints.CARD)
     public CustomerDtos.CustomerView updateCard(@PathVariable String id, @Valid @RequestBody CustomerDtos.CardDto dto,
                                                 Authentication auth) {

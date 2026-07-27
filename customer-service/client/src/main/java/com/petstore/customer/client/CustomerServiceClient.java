@@ -106,6 +106,11 @@ public class CustomerServiceClient {
 
     // ---- reads / updates (bearer-token protected) ----
 
+    /**
+     * Fetch a customer aggregate. {@code GET /customer/{id}} with the caller's Bearer
+     * token forwarded. Returns the {@link CustomerView} (card masked), or empty on 404
+     * (no such customer). Propagates 401/403 as {@link HttpClientErrorException}.
+     */
     public Optional<CustomerView> getCustomer(String id, String bearerToken) {
         try {
             return Optional.ofNullable(http.get().uri(CustomerServiceEndpoints.CUSTOMER, id)
@@ -116,6 +121,11 @@ public class CustomerServiceClient {
         }
     }
 
+    /**
+     * Replace the account/contact slice. {@code PUT /customer/{id}/account} with the
+     * caller's Bearer token forwarded; profile + card are preserved. Returns the refreshed
+     * {@link CustomerView}. Throws {@link HttpClientErrorException} on 400 (validation)/401/403/404.
+     */
     public CustomerView updateAccount(String id, AccountDto account, String bearerToken) {
         return http.put().uri(CustomerServiceEndpoints.ACCOUNT, id)
                 .header("Authorization", bearer(bearerToken))
@@ -123,6 +133,11 @@ public class CustomerServiceClient {
                 .retrieve().body(CustomerView.class);
     }
 
+    /**
+     * Replace the profile-preferences slice. {@code PUT /customer/{id}/profile} with the
+     * caller's Bearer token forwarded; account + card are preserved. Returns the refreshed
+     * {@link CustomerView}. Throws {@link HttpClientErrorException} on 400 (validation)/401/403/404.
+     */
     public CustomerView updateProfile(String id, ProfileDto profile, String bearerToken) {
         return http.put().uri(CustomerServiceEndpoints.PROFILE, id)
                 .header("Authorization", bearer(bearerToken))
@@ -130,6 +145,12 @@ public class CustomerServiceClient {
                 .retrieve().body(CustomerView.class);
     }
 
+    /**
+     * Replace the credit-card slice. {@code PUT /customer/{id}/card} with the caller's
+     * Bearer token forwarded; account + profile are preserved. Returns the refreshed
+     * {@link CustomerView} (card masked). Throws {@link HttpClientErrorException} on
+     * 400 (validation)/401/403/404.
+     */
     public CustomerView updateCard(String id, CardDto card, String bearerToken) {
         return http.put().uri(CustomerServiceEndpoints.CARD, id)
                 .header("Authorization", bearer(bearerToken))

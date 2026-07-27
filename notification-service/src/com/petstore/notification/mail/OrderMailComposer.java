@@ -38,7 +38,15 @@ public class OrderMailComposer {
     private static final String OUTCOME_DENIED = "has been declined";
     private static final String OUTCOME_APPROVED = "has been approved and is being prepared for shipment";
 
-    /** Compose the "order shipped" (or backorder) email for an invoice event. */
+    /**
+     * Compose the "order shipped" (or backorder) email for an invoice event. {@code shipped=true}
+     * produces the shipped subject/body with the order total; {@code shipped=false} produces the
+     * backorder ("delayed") subject/body. Recipient falls back to {@code <userId>@petstore.invalid}
+     * when the invoice carries no email. Pure — no transport, no side effects.
+     *
+     * @param invoice the invoice event (orderId, shipped flag, totalPrice, recipient fields)
+     * @return the composed {@link Email} (to, subject, body); never null
+     */
     public Email fromInvoice(InvoiceEvent invoice) {
         String to = recipient(invoice);
         if (invoice.shipped()) {
@@ -68,7 +76,10 @@ public class OrderMailComposer {
      * legacy {@code MailOrderApprovalMDB} ("Order Status: …") and
      * {@code MailCompletedOrderMDB} ("Order COMPLETED: …") triggers. A COMPLETED
      * status uses the dedicated completed subject; APPROVED/DENIED use the generic
-     * order-status subject.
+     * order-status subject. Pure — no transport, no side effects.
+     *
+     * @param event the order-status event (orderId, status, totalPrice, recipient fields)
+     * @return the composed {@link Email} (to, subject, body); never null
      */
     public Email fromStatus(OrderStatusEvent event) {
         String to = recipient(event.emailId(), event.userId());

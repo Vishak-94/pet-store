@@ -32,6 +32,37 @@ public class OrderApprovedListener {
         this.publisher = publisher;
     }
 
+    /**
+     * Consume one approved order off the ApprovedOrderQueue, fulfil it, and publish the
+     * resulting {@link InvoiceEvent} to the InvoiceTopic. Always publishes an invoice — even on
+     * short stock ({@code shipped=false}) so downstream can send a backorder notice. A backorder
+     * is an expected outcome (ACK the message); any other failure propagates so JMS redelivers
+     * (the consumer is idempotent).
+     *
+     * <p>Example inbound event (ApprovedOrderQueue):
+     * <pre>{@code
+     * {
+     *   "meta": { "eventId": "evt-9f3", "type": "OrderApproved", "correlationId": "corr-42" },
+     *   "orderId": "1001",
+     *   "userId": "j2ee",
+     *   "emailId": "buyer@example.com",
+     *   "lines": [ { "itemId": "EST-1", "quantity": 2, "unitPrice": 12.50 } ]
+     * }
+     * }</pre>
+     * Produces, to the InvoiceTopic:
+     * <pre>{@code
+     * {
+     *   "meta": { "eventId": "evt-b71", "type": "Invoice", "correlationId": "corr-42" },
+     *   "orderId": "1001",
+     *   "userId": "j2ee",
+     *   "emailId": "buyer@example.com",
+     *   "shipped": true,
+     *   "totalPrice": 25.00
+     * }
+     * }</pre>
+     *
+     * @param order the approved order to fulfil (deserialized from the queue message)
+     */
     @JmsListener(destination = Destinations.APPROVED_ORDER_NAME, containerFactory = "queueFactory")
     public void onApprovedOrder(OrderApprovedEvent order) {
         // Adopt the approved-order's correlation id so the invoice we publish (and the logs here)

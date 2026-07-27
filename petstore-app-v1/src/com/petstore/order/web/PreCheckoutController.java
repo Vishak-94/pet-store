@@ -38,6 +38,16 @@ public class PreCheckoutController {
      * Reserve a fresh server-minted order id for the signed-in customer and return it encrypted.
      * The UI parks it in the checkout form's hidden {@code orderKey} field; {@code POST /checkout}
      * decrypts and consumes it exactly once, making submission idempotent against refresh/double-click.
+     *
+     * <pre>{@code
+     * POST /pre-checkout        (authenticated customer; keyed by the session userId)
+     *   (no body)
+     *
+     * 200 OK  {"orderKey":"<base64url AES/GCM ciphertext of the reserved order id>"}
+     * }</pre>
+     *
+     * <p>Anonymous callers are rejected by SecurityConfig. Calling again replaces the customer's
+     * previous reservation (last render wins; multi-tab out of scope).
      */
     @PostMapping("/pre-checkout")
     public Map<String, String> reserve(Authentication auth) {

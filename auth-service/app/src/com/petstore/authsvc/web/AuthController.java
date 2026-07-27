@@ -40,10 +40,31 @@ public class AuthController {
 
     /**
      * Authenticate a username/password (BCrypt check in {@link AuthService}) and, on success,
-     * mint an RS256 token carrying the account's userId + roles. Returns
-     * {@code {token, tokenType:"Bearer", userId, roles}} on success, or 401 with
-     * {@code {error:"invalid_credentials"}} on any failure (unknown user or bad password —
-     * the two are deliberately indistinguishable to avoid user enumeration).
+     * mint an RS256 token carrying the account's userId + roles. The two failure modes (unknown
+     * user, bad password) are deliberately indistinguishable to avoid user enumeration.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * POST /auth/login
+     * Content-Type: application/json
+     *
+     * {"userName": "j2ee", "password": "j2ee"}
+     * }</pre>
+     *
+     * <p>Example response (200):
+     * <pre>{@code
+     * {
+     *   "token": "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJqMmVlIiwidWlkIjoi...}.<sig>",
+     *   "tokenType": "Bearer",
+     *   "userId": "j2ee-0001",
+     *   "roles": ["USER"]
+     * }
+     * }</pre>
+     *
+     * <p>Bad credentials → {@code 401 Unauthorized}:
+     * <pre>{@code
+     * {"error": "invalid_credentials"}
+     * }</pre>
      */
     @PostMapping("/auth/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest req) {

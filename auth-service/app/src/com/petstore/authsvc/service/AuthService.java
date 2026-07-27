@@ -23,6 +23,15 @@ public class AuthService {
         this.encoder = encoder;
     }
 
+    /**
+     * Verify a raw password against the stored BCrypt hash for {@code userName}.
+     *
+     * @param userName    primary key of the account to check
+     * @param rawPassword the plaintext password to verify (never stored/logged)
+     * @return the matching {@link AccountEntity} on success, or {@link Optional#empty()} when the
+     *         user is unknown <em>or</em> the password does not match — the caller must not
+     *         distinguish the two (avoids user enumeration). Read-only; no side-effects.
+     */
     public Optional<AccountEntity> authenticate(String userName, String rawPassword) {
         return accounts.findById(userName)
                 .filter(a -> encoder.matches(rawPassword, a.getPassword()));

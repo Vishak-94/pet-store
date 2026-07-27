@@ -39,11 +39,40 @@ public class DlqListener {
 
     // Queue consumer (point-to-point): the DLQ/ExpiryQueue are anycast queues (broker.xml),
     // so use the queueFactory, NOT the topicFactory the notification listeners use.
+    /**
+     * Consume a dead-lettered message (one that failed 3 broker delivery attempts) and log it at
+     * ERROR for operator attention. Consumed as a raw {@link Message} — never deserialized to a
+     * typed event (the body is often what made it un-processable). Never throws (see
+     * {@link #logQuarantined}), so the poison message is always ACKed and not re-queued.
+     *
+     * <p>Example: an {@code InvoiceEvent} whose consumer kept failing arrives on the DLQ carrying
+     * headers {@code _AMQ_ORIG_ADDRESS=InvoiceTopic}, {@code _type=Invoice},
+     * {@code JMSXDeliveryCount=4}. Produces an ERROR log line:
+     * <pre>{@code
+     * DLQ received a quarantined message: origin=InvoiceTopic, _type=Invoice,
+     *   messageId=ID:..., deliveryCount=4 — requires operator attention. Body: {"orderId":"1001",...}
+     * }</pre>
+     *
+     * @param message the raw quarantined JMS message
+     */
     @JmsListener(destination = "DLQ", containerFactory = "queueFactory")
     public void onDeadLetter(Message message) {
         logQuarantined("DLQ", message);
     }
 
+    /**
+     * Consume an expired message off the ExpiryQueue and log it at ERROR — same raw-message,
+     * never-throw handling as {@link #onDeadLetter}. A message lands here when its TTL elapsed
+     * before any consumer processed it.
+     *
+     * <p>Example: an {@code OrderStatusEvent} that expired produces an ERROR log line:
+     * <pre>{@code
+     * ExpiryQueue received a quarantined message: origin=OrderStatusTopic, _type=OrderStatus,
+     *   messageId=ID:..., deliveryCount=1 — requires operator attention. Body: {"orderId":"1001",...}
+     * }</pre>
+     *
+     * @param message the raw expired JMS message
+     */
     @JmsListener(destination = "ExpiryQueue", containerFactory = "queueFactory")
     public void onExpired(Message message) {
         logQuarantined("ExpiryQueue", message);

@@ -42,7 +42,17 @@ public class RegistrationController {
         this.customerClient = customerClient;
     }
 
-    /** Show the sign-up form, capturing the originating screen so we can return there afterwards. */
+    /**
+     * Show the sign-up form, capturing the originating screen so we can return there afterwards.
+     *
+     * <pre>{@code
+     * GET /register-form?returnUrl=/cart        // ?returnUrl= wins; else the Referer is used
+     * GET /register-form   (Referer: http://host/cart)
+     *
+     * 200 OK  renders register.html
+     *   model: returnUrl = "/cart"   // reduced to a same-app path; null if not usable
+     * }</pre>
+     */
     @GetMapping(REGISTER_PATH)
     public String registerForm(@RequestParam(required = false) String returnUrl,
                                @RequestHeader(value = HttpHeaders.REFERER, required = false) String referer,
@@ -76,6 +86,23 @@ public class RegistrationController {
      * customer-service. On success redirects to the originating screen (same-app only, open-redirect
      * guarded) or the login page; a duplicate username → 409, invalid details → 400, or an
      * unavailable service each re-render the form with the matching message.
+     *
+     * <pre>{@code
+     * POST /register-form
+     *   form: userName=jdoe&password=secret
+     *         &givenName=Jane&familyName=Doe&email=jane@x.com
+     *         &street1=1+Main+St&city=Palo+Alto&state=CA&zipCode=94301&country=US
+     *         &cardNumber=4111...&cardType=Visa&cardExpiry=12/29   // card fields optional
+     *         &returnUrl=/cart                                     // optional
+     *
+     * 302 Found  Location: /cart              // returnUrl (same-app only), else:
+     * 302 Found  Location: /login?registered  // default landing after sign-up
+     * }</pre>
+     *
+     * <p>Edge cases re-render register.html with an {@code error}: duplicate username (409) →
+     * "username taken"; invalid details (400) → "invalid details"; customer-service down →
+     * "service unavailable". A non-local {@code returnUrl} (e.g. {@code //evil.com}) is ignored
+     * (open-redirect guard) and falls back to the login page.
      */
     @PostMapping(REGISTER_PATH)
     public String register(@RequestParam String userName,

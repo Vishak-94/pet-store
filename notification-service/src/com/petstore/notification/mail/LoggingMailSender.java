@@ -17,6 +17,13 @@ public class LoggingMailSender implements MailSender {
 
     private static final Logger log = LoggerFactory.getLogger(LoggingMailSender.class);
 
+    /**
+     * "Send" the email by logging it as a boxed block at INFO — the dev/no-infra path. The body
+     * is indented so multi-line content stays inside the box. No SMTP; side-effect is the log
+     * line only.
+     *
+     * @param email the fully-composed email (to, subject, body) to render to the log
+     */
     @Override
     public void send(Email email) {
         log.info("""

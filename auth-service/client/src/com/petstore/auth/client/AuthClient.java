@@ -76,10 +76,22 @@ public class AuthClient {
     }
 
     /**
-     * Provision a credential in the central store (used at registration/onboarding).
-     * Returns the stable userId the caller should store as a reference. Throws
-     * {@link org.springframework.web.client.HttpClientErrorException} on 409 (duplicate)
-     * / 400, so the caller can map registration errors.
+     * Provision a credential in the central store (used at registration/onboarding) via
+     * {@code POST /auth/accounts}. Returns the stable userId the caller should store as a
+     * reference.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * String userId = new AuthClient().provision("jane", "s3cret", "USER");
+     * // userId -> "6f1c...-uuid", stored by the caller as the profile's account reference
+     * }</pre>
+     *
+     * @param userName desired login name (1–25 chars, no {@code %}/{@code *})
+     * @param password plaintext password (1–25 chars); hashed server-side, never stored here
+     * @param role     requested role; only {@code USER} is allowed without an ADMIN token
+     * @return the stable userId, or null if the response body is absent
+     * @throws org.springframework.web.client.HttpClientErrorException on 400 (invalid_request),
+     *         409 (duplicate_account) or 403 (admin_required), so the caller can map the error
      */
     @SuppressWarnings("unchecked")
     public String provision(String userName, String password, String role) {
@@ -90,7 +102,22 @@ public class AuthClient {
         return resp == null ? null : (String) resp.get(FIELD_USER_ID);
     }
 
-    /** Authenticate; empty on bad credentials (401). */
+    /**
+     * Authenticate a user via {@code POST /auth/login} and return the issued token + identity.
+     * Empty on bad credentials (401) — callers must not distinguish unknown-user from
+     * bad-password (avoids user enumeration).
+     *
+     * <p>Example:
+     * <pre>{@code
+     * Optional<LoginResult> r = new AuthClient().login("j2ee", "j2ee");
+     * r.ifPresent(res -> setCookie("jwt", res.token()));  // res.roles() -> ["USER"]
+     * }</pre>
+     *
+     * @param userName login name
+     * @param password plaintext password (sent over the wire; never logged)
+     * @return a {@link LoginResult} ({@code token}, {@code userId}, {@code roles}) on success,
+     *         or {@link Optional#empty()} on bad credentials
+     */
     @SuppressWarnings("unchecked")
     public Optional<LoginResult> login(String userName, String password) {
         try {

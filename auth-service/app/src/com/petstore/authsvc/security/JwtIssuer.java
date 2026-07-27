@@ -32,7 +32,18 @@ public class JwtIssuer {
         this.ttlMillis = ttlSeconds * 1000;
     }
 
-    /** Mint a signed token carrying the stable userId + roles. */
+    /**
+     * Mint a signed RS256 token for an authenticated principal. Signs with the RSA PRIVATE key
+     * this service alone holds, so no other service can forge a token — verifiers only validate.
+     *
+     * <p>Claims: {@code sub} = username, {@code uid} = stable userId, {@code roles} = list,
+     * {@code iat} = now, {@code exp} = now + {@code auth.jwt.ttl-seconds} (default 3600).
+     *
+     * @param username the account userName (becomes the {@code sub} claim)
+     * @param userId   the stable opaque userId (becomes the {@code uid} claim)
+     * @param roles    the account's roles (becomes the {@code roles} claim)
+     * @return a compact, signed JWT string ({@code header.payload.signature})
+     */
     public String issue(String username, String userId, List<String> roles) {
         long now = System.currentTimeMillis();
         return Jwts.builder()

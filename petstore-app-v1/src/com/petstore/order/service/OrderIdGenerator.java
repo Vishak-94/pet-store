@@ -27,6 +27,12 @@ public class OrderIdGenerator {
     private final AtomicInteger seq = new AtomicInteger(0);
     private volatile long lastMs = -1L;
 
+    /**
+     * Returns the next unique, time-ordered order id as a decimal string (e.g.
+     * {@code "17838293450752001"}). {@code synchronized} so the per-ms sequence and
+     * {@code lastMs} advance atomically; spins to the next millisecond if the 12-bit
+     * sequence is exhausted within the same one.
+     */
     public synchronized String nextId() {
         long now = Instant.now().toEpochMilli();
         if (now == lastMs) {

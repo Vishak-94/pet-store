@@ -75,7 +75,27 @@ public class CatalogApiController {
 
     // ---- categories ----
 
-    /** Top-level category listing, one page ({@code start}/{@code count}), localized. */
+    /**
+     * Top-level category listing, one page ({@code start}/{@code count}), localized.
+     * Always 200 with a (possibly empty) page — a miss is an empty list, never a 404.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/categories?start=0&count=10&lang=en_US
+     * }</pre>
+     *
+     * <p>Example response (200):
+     * <pre>{@code
+     * {
+     *   "list": [
+     *     {"id": "FISH", "name": "Fish", "description": "Fish"},
+     *     {"id": "DOGS", "name": "Dogs", "description": "Dogs"}
+     *   ],
+     *   "start": 0,
+     *   "nextPageAvailable": true
+     * }
+     * }</pre>
+     */
     @GetMapping(CatalogServiceEndpoints.CATEGORIES)
     public CategoryPage categories(@RequestParam(value = CatalogServiceEndpoints.PARAM_START, defaultValue = DEFAULT_START) int start,
                                    @RequestParam(value = CatalogServiceEndpoints.PARAM_COUNT, defaultValue = DEFAULT_COUNT_STR) int count,
@@ -84,7 +104,22 @@ public class CatalogApiController {
         return new CategoryPage(mapCategories(page.getList()), start, page.isNextPageAvailable());
     }
 
-    /** Single category by id (localized); 404 when the category/locale row is absent. */
+    /**
+     * Single category by id (localized); 404 when the category/locale row is absent
+     * (the client maps that 404 back to {@code Optional.empty()}).
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/categories/FISH?lang=en_US
+     * }</pre>
+     *
+     * <p>Example response (200):
+     * <pre>{@code
+     * {"id": "FISH", "name": "Fish", "description": "Fish"}
+     * }</pre>
+     *
+     * <p>Not found → {@code 404 Not Found} with an empty body.
+     */
     @GetMapping(CatalogServiceEndpoints.CATEGORY_BY_ID)
     public ResponseEntity<CategoryDto> category(@PathVariable String id,
                                                 @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
@@ -93,7 +128,26 @@ public class CatalogApiController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    /** One page of products within a category (localized, ordered by name). */
+    /**
+     * One page of products within a category (localized, ordered by name).
+     * Always 200 with a (possibly empty) page — an unknown category yields an empty list.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/categories/FISH/products?start=0&count=10&lang=en_US
+     * }</pre>
+     *
+     * <p>Example response (200):
+     * <pre>{@code
+     * {
+     *   "list": [
+     *     {"id": "FI-SW-01", "name": "Angelfish", "description": "Salt Water fish from Australia"}
+     *   ],
+     *   "start": 0,
+     *   "nextPageAvailable": false
+     * }
+     * }</pre>
+     */
     @GetMapping(CatalogServiceEndpoints.PRODUCTS_IN_CATEGORY)
     public ProductPage productsInCategory(@PathVariable String id,
                                           @RequestParam(value = CatalogServiceEndpoints.PARAM_START, defaultValue = DEFAULT_START) int start,
@@ -105,7 +159,22 @@ public class CatalogApiController {
 
     // ---- products ----
 
-    /** Single product by id (localized); 404 when the product/locale row is absent. */
+    /**
+     * Single product by id (localized); 404 when the product/locale row is absent
+     * (the client maps that 404 back to {@code Optional.empty()}).
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/products/FI-SW-01?lang=en_US
+     * }</pre>
+     *
+     * <p>Example response (200):
+     * <pre>{@code
+     * {"id": "FI-SW-01", "name": "Angelfish", "description": "Salt Water fish from Australia"}
+     * }</pre>
+     *
+     * <p>Not found → {@code 404 Not Found} with an empty body.
+     */
     @GetMapping(CatalogServiceEndpoints.PRODUCT_BY_ID)
     public ResponseEntity<ProductDto> product(@PathVariable String id,
                                               @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
@@ -114,7 +183,32 @@ public class CatalogApiController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    /** One page of items within a product (localized, ordered by itemid). */
+    /**
+     * One page of items (purchasable variants) within a product (localized, ordered by itemid).
+     * Always 200 with a (possibly empty) page.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/products/FI-SW-01/items?start=0&count=10&lang=en_US
+     * }</pre>
+     *
+     * <p>Example response (200):
+     * <pre>{@code
+     * {
+     *   "list": [
+     *     {
+     *       "category": "FISH", "productId": "FI-SW-01", "productName": "Angelfish",
+     *       "attribute1": "Large", "attribute2": null, "attribute3": null,
+     *       "attribute4": null, "attribute5": null,
+     *       "itemId": "EST-1", "description": "Large Angelfish",
+     *       "listPrice": 16.50, "unitCost": 10.00, "imageLocation": "fish1.gif"
+     *     }
+     *   ],
+     *   "start": 0,
+     *   "nextPageAvailable": false
+     * }
+     * }</pre>
+     */
     @GetMapping(CatalogServiceEndpoints.ITEMS_IN_PRODUCT)
     public ItemPage itemsInProduct(@PathVariable String id,
                                    @RequestParam(value = CatalogServiceEndpoints.PARAM_START, defaultValue = DEFAULT_START) int start,
@@ -126,7 +220,28 @@ public class CatalogApiController {
 
     // ---- items ----
 
-    /** Single item by id (localized, with resolved category); 404 when absent. */
+    /**
+     * Single item by id (localized, with {@code category} resolved from the item's
+     * product catid); 404 when absent (client maps 404 → {@code Optional.empty()}).
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/items/EST-1?lang=en_US
+     * }</pre>
+     *
+     * <p>Example response (200):
+     * <pre>{@code
+     * {
+     *   "category": "FISH", "productId": "FI-SW-01", "productName": "Angelfish",
+     *   "attribute1": "Large", "attribute2": null, "attribute3": null,
+     *   "attribute4": null, "attribute5": null,
+     *   "itemId": "EST-1", "description": "Large Angelfish",
+     *   "listPrice": 16.50, "unitCost": 10.00, "imageLocation": "fish1.gif"
+     * }
+     * }</pre>
+     *
+     * <p>Not found → {@code 404 Not Found} with an empty body.
+     */
     @GetMapping(CatalogServiceEndpoints.ITEM_BY_ID)
     public ResponseEntity<ItemDto> item(@PathVariable String id,
                                         @RequestParam(value = CatalogServiceEndpoints.PARAM_LANG, required = false) String lang) {
@@ -135,7 +250,34 @@ public class CatalogApiController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    /** Keyword item search (one page); blank keyword → empty page (legacy-faithful tokenized OR search). */
+    /**
+     * Keyword item search (one page); blank keyword → empty page. Legacy-faithful: the query is
+     * whitespace-tokenized and each token is OR-matched (case-insensitive {@code LIKE %token%})
+     * across product name, category catid, and item description (attributes are NOT searched).
+     * Always 200 with a (possibly empty) page.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * GET /api/items?keyword=angelfish&start=0&count=10&lang=en_US
+     * }</pre>
+     *
+     * <p>Example response (200):
+     * <pre>{@code
+     * {
+     *   "list": [
+     *     {
+     *       "category": "FISH", "productId": "FI-SW-01", "productName": "Angelfish",
+     *       "attribute1": "Large", "attribute2": null, "attribute3": null,
+     *       "attribute4": null, "attribute5": null,
+     *       "itemId": "EST-1", "description": "Large Angelfish",
+     *       "listPrice": 16.50, "unitCost": 10.00, "imageLocation": "fish1.gif"
+     *     }
+     *   ],
+     *   "start": 0,
+     *   "nextPageAvailable": false
+     * }
+     * }</pre>
+     */
     @GetMapping(CatalogServiceEndpoints.ITEMS_SEARCH)
     public ItemPage search(@RequestParam(value = CatalogServiceEndpoints.PARAM_KEYWORD, defaultValue = "") String keyword,
                            @RequestParam(value = CatalogServiceEndpoints.PARAM_START, defaultValue = DEFAULT_START) int start,

@@ -29,6 +29,15 @@ public class ApprovalGateway {
         this.outbox = outbox;
     }
 
+    /**
+     * Enqueue an {@link OrderApprovedEvent} for inventory-service to the transactional
+     * outbox, keyed by order id. Must be called inside the approving business transaction
+     * so the event row commits atomically with the APPROVED status write; the
+     * {@link OutboxRelay} publishes it to ApprovedOrderQueue just after commit
+     * (at-least-once — the consumer is idempotent). Does not publish to JMS itself.
+     *
+     * @param order the just-approved order whose lines are copied into the event
+     */
     public void dispatchForFulfilment(WarehouseOrder order) {
         OrderApprovedEvent event = new OrderApprovedEvent(
                 Events.meta(OrderApprovedEvent.TYPE),

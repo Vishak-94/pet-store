@@ -51,7 +51,11 @@ public class OutboxWriter {
      * business transaction (the gateways are invoked from {@code @Transactional} services),
      * so the row is committed atomically with the state change.
      *
+     * @param dest    the JMS destination (queue/topic) the relay will publish to
+     * @param event   the event to freeze to JSON; its class must be registered in
+     *                {@link MessagingConfig#TYPE_IDS}
      * @param orderId the order the event is about (for tracing / operational queries)
+     * @throws IllegalArgumentException if {@code event}'s class has no {@code _type} id mapping
      */
     public void enqueue(Destination dest, Object event, String orderId) {
         String type = TYPE_BY_CLASS.get(event.getClass());

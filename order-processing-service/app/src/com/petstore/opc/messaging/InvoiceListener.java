@@ -37,6 +37,16 @@ public class InvoiceListener {
     // subscriber: notification-service also subscribes to InvoiceTopic but under a DIFFERENT name
     // ("notification-invoice"), so each service keeps its own independent copy of every invoice
     // (topic fan-out). Two listeners sharing ONE name would compete for messages instead.
+    /**
+     * Consume one {@link InvoiceEvent} off InvoiceTopic and advance the order. A shipped
+     * invoice on an order that {@code canGoTo(COMPLETED)} moves it APPROVED → COMPLETED and
+     * announces that to the customer (via {@link OrderStatusGateway}); an unshipped invoice
+     * (backorder) leaves the order APPROVED. Idempotent: an unknown order is logged and
+     * skipped, and an order already COMPLETED is a no-op — safe under JMS at-least-once and
+     * topic fan-out (notification-service is a separate subscriber under its own name).
+     *
+     * @param invoice the inbound invoice event (from inventory-service's ship/backorder)
+     */
     @JmsListener(destination = Destinations.INVOICE_NAME, containerFactory = "topicFactory",
             subscription = "opc-invoice")
     @Transactional

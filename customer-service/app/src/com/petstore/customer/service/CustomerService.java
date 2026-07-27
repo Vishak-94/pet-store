@@ -59,26 +59,43 @@ public class CustomerService {
         return register(userName, password, account, null);
     }
 
+    /**
+     * Look up a customer aggregate by its opaque {@code userId} (the UUID auth-service
+     * minted at registration). Read-only; returns empty when no such customer exists
+     * (the controller maps that to 404). No side-effects.
+     */
     @Transactional(readOnly = true)
     public Optional<Customer> findByUserId(String userId) {
         return customers.findByUserId(userId);
     }
 
-    /** Update the contact/billing account of an existing customer. */
+    /**
+     * Replace the contact/billing account slice of an existing customer, preserving the
+     * profile and credit card. Persists and returns the refreshed aggregate. Throws
+     * {@link IllegalArgumentException} if no customer with {@code userId} exists.
+     */
     @Transactional
     public Customer updateAccount(String userId, Account account) {
         Customer existing = require(userId);
         return customers.save(new Customer(userId, account, existing.getProfile(), existing.getCreditCard()));
     }
 
-    /** Update profile preferences of an existing customer. */
+    /**
+     * Replace the profile-preferences slice of an existing customer, preserving the account
+     * and credit card. Persists and returns the refreshed aggregate. Throws
+     * {@link IllegalArgumentException} if no customer with {@code userId} exists.
+     */
     @Transactional
     public Customer updateProfile(String userId, Profile profile) {
         Customer existing = require(userId);
         return customers.save(new Customer(userId, existing.getAccount(), profile, existing.getCreditCard()));
     }
 
-    /** Update (or set) the customer's credit card. */
+    /**
+     * Replace (or set) the credit-card slice of an existing customer, preserving the account
+     * and profile. Persists and returns the refreshed aggregate. Throws
+     * {@link IllegalArgumentException} if no customer with {@code userId} exists.
+     */
     @Transactional
     public Customer updateCreditCard(String userId, CreditCard creditCard) {
         Customer existing = require(userId);

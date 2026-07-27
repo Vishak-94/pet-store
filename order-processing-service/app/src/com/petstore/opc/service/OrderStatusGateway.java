@@ -32,7 +32,18 @@ public class OrderStatusGateway {
         this.outbox = outbox;
     }
 
-    /** Announce a status change for an order we have the full record for. */
+    /**
+     * Announce a status change for an order we have the full record for by enqueueing an
+     * {@link OrderStatusEvent} to the transactional outbox, keyed by order id. Must be
+     * called inside the business transaction that made the change so the event row commits
+     * atomically with it; the {@link OutboxRelay} publishes it to OrderStatusTopic just
+     * after commit (at-least-once → notification-service emails the customer). Does not
+     * publish to JMS itself.
+     *
+     * @param order     the order the change applies to (id/user/email/total go into the event)
+     * @param newStatus the new status the customer is being notified of
+     *                  (APPROVED / DENIED / COMPLETED)
+     */
     public void announce(WarehouseOrder order, OrderStatus newStatus) {
         OrderStatusEvent event = new OrderStatusEvent(
                 Events.meta(OrderStatusEvent.TYPE),

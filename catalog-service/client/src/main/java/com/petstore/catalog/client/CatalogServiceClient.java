@@ -71,6 +71,13 @@ public class CatalogServiceClient {
 
     // ---- categories ----
 
+    /**
+     * Fetch one category (localized). Maps a {@code 404} back to {@link Optional#empty()}.
+     *
+     * @param categoryId category id (e.g. {@code "FISH"})
+     * @param locale     legacy locale key (e.g. {@code "en_US"})
+     * @return the category, or {@link Optional#empty()} if not found
+     */
     public Optional<CategoryDto> getCategory(String categoryId, String locale) {
         try {
             return Optional.ofNullable(http.get()
@@ -82,6 +89,15 @@ public class CatalogServiceClient {
         }
     }
 
+    /**
+     * Fetch one page of top-level categories (localized). A null body (nothing matched)
+     * is coalesced to an empty page — never null.
+     *
+     * @param start  zero-based offset of the first row
+     * @param count  page size
+     * @param locale legacy locale key (e.g. {@code "en_US"})
+     * @return a {@link CategoryPage} ({@code list}, {@code start}, {@code nextPageAvailable})
+     */
     public CategoryPage getCategories(int start, int count, String locale) {
         CategoryPage page = http.get()
                 .uri(uri -> uri.path(CatalogServiceEndpoints.CATEGORIES)
@@ -94,6 +110,13 @@ public class CatalogServiceClient {
 
     // ---- products ----
 
+    /**
+     * Fetch one product (localized). Maps a {@code 404} back to {@link Optional#empty()}.
+     *
+     * @param productId product id (e.g. {@code "FI-SW-01"})
+     * @param locale    legacy locale key (e.g. {@code "en_US"})
+     * @return the product, or {@link Optional#empty()} if not found
+     */
     public Optional<ProductDto> getProduct(String productId, String locale) {
         try {
             return Optional.ofNullable(http.get()
@@ -105,6 +128,16 @@ public class CatalogServiceClient {
         }
     }
 
+    /**
+     * Fetch one page of products in a category (localized). A null body is coalesced to an
+     * empty page — never null.
+     *
+     * @param categoryId owning category id
+     * @param start      zero-based offset of the first row
+     * @param count      page size
+     * @param locale     legacy locale key (e.g. {@code "en_US"})
+     * @return a {@link ProductPage} ({@code list}, {@code start}, {@code nextPageAvailable})
+     */
     public ProductPage getProducts(String categoryId, int start, int count, String locale) {
         ProductPage page = http.get()
                 .uri(uri -> uri.path(CatalogServiceEndpoints.PRODUCTS_IN_CATEGORY)
@@ -117,6 +150,14 @@ public class CatalogServiceClient {
 
     // ---- items ----
 
+    /**
+     * Fetch one item (localized, with resolved category). Maps a {@code 404} back to
+     * {@link Optional#empty()}.
+     *
+     * @param itemId item id (e.g. {@code "EST-1"})
+     * @param locale legacy locale key (e.g. {@code "en_US"})
+     * @return the item, or {@link Optional#empty()} if not found
+     */
     public Optional<ItemDto> getItem(String itemId, String locale) {
         try {
             return Optional.ofNullable(http.get()
@@ -128,6 +169,16 @@ public class CatalogServiceClient {
         }
     }
 
+    /**
+     * Fetch one page of items in a product (localized). A null body is coalesced to an empty
+     * page — never null. Note {@code size} is sent on the wire as the {@code count} query param.
+     *
+     * @param productId owning product id
+     * @param start     zero-based offset of the first row
+     * @param size      page size (wire param {@code count})
+     * @param locale    legacy locale key (e.g. {@code "en_US"})
+     * @return an {@link ItemPage} ({@code list}, {@code start}, {@code nextPageAvailable})
+     */
     public ItemPage getItems(String productId, int start, int size, String locale) {
         ItemPage page = http.get()
                 .uri(uri -> uri.path(CatalogServiceEndpoints.ITEMS_IN_PRODUCT)
@@ -138,6 +189,17 @@ public class CatalogServiceClient {
         return page == null ? emptyItemPage(start) : page;
     }
 
+    /**
+     * Keyword search over items (localized). A null/blank keyword is sent as an empty string
+     * (→ empty page). A null body is coalesced to an empty page — never null. {@code size} is
+     * sent on the wire as the {@code count} query param.
+     *
+     * @param keyword free-text query (whitespace-tokenized, OR-matched server-side)
+     * @param start   zero-based offset of the first row
+     * @param size    page size (wire param {@code count})
+     * @param locale  legacy locale key (e.g. {@code "en_US"})
+     * @return an {@link ItemPage} of matches ({@code list}, {@code start}, {@code nextPageAvailable})
+     */
     public ItemPage searchItems(String keyword, int start, int size, String locale) {
         ItemPage page = http.get()
                 .uri(uri -> uri.path(CatalogServiceEndpoints.ITEMS_SEARCH)
