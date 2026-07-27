@@ -130,6 +130,12 @@ The JWT lives as the `Authentication` credential and is forwarded as a Bearer to
   same-origin proxy (browser is on :8080, inventory-service on :8085 → direct fetch is cross-origin)
   that forwards to `InventoryClient` and returns `204` when stock is unavailable (stepper stays
   uncapped). `/api/stock/**` is public (browse data); it exposes exact counts, unlike the coarse badge.
+  Both paths share one `InventoryClient` bean, which **caches each per-item reading in-process**
+  (`SingleFlightStockCache`, TTL `inventory.stock-cache.ttl`, default 1h): a fresh entry is served
+  without a remote call, and on expiry exactly one thread refreshes an item while concurrent readers
+  wait for its result (single-flight — no cache stampede). Safe precisely because the value is
+  display-only and never an oversell guard, so up-to-a-TTL staleness is acceptable; transport
+  failures/empties are **not** cached, so the badge recovers as soon as inventory-service is healthy.
 - `OrderService` hardcodes `locale = Locale.US` (and `currency = USD`) on the intake request
   (legacy quirk) — the UI locale does not flow into the order.
 - **Checkout intake is synchronous** — a slow/down OPC blocks the checkout thread until the SDK's

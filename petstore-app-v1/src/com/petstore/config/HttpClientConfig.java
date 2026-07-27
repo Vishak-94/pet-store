@@ -51,12 +51,16 @@ public class HttpClientConfig {
     }
 
     @Bean
-    InventoryClient inventoryClient(ServiceEndpoints endpoints) {
+    InventoryClient inventoryClient(ServiceEndpoints endpoints,
+            @Value("${inventory.stock-cache.ttl:1h}") java.time.Duration stockCacheTtl) {
         String baseUrl = endpoints.getInventory().getBaseUrl();
         String url = (baseUrl == null || baseUrl.isBlank()) ? DEFAULT_INVENTORY_BASE_URL : baseUrl;
         // Availability is an idempotent GET, so the breaker AND the bounded GET-retry both apply —
         // and the read is only for a cosmetic stock badge, so the controller degrades on any failure.
-        return new InventoryClient(ResilientRestClient.forService(CB_INVENTORY, url));
+        // The client also caches each reading in-process for `inventory.stock-cache.ttl` (default 1h,
+        // single-flight refresh) so browse traffic doesn't hit inventory-service per page view; safe
+        // because the value is never an oversell guard (that check stays at fulfilment).
+        return new InventoryClient(ResilientRestClient.forService(CB_INVENTORY, url), stockCacheTtl);
     }
 
     @Bean
