@@ -24,12 +24,16 @@ public class ServiceEndpoints {
 
     private Service customer = new Service();
     private Service catalog = new Service();
+    private Service orderProcessing = new Service();
 
     public Service getCustomer() { return customer; }
     public void setCustomer(Service customer) { this.customer = customer; }
 
     public Service getCatalog() { return catalog; }
     public void setCatalog(Service catalog) { this.catalog = catalog; }
+
+    public Service getOrderProcessing() { return orderProcessing; }
+    public void setOrderProcessing(Service orderProcessing) { this.orderProcessing = orderProcessing; }
 
     public static class Service {
         private String baseUrl;

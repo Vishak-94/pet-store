@@ -24,8 +24,16 @@ public class SecurityConfig {
 
     /** Role (without Spring's {@code ROLE_} prefix) required for the whole admin facade. */
     private static final String ADMIN_ROLE = "ADMIN";
+    /** Customer role — a signed-in shopper (checkout intake), distinct from the admin console. */
+    private static final String USER_ROLE = "USER";
     /** Public paths: health/metrics probes and the error dispatch. */
     private static final String[] PUBLIC_MATCHERS = {"/actuator/**", "/error"};
+    /**
+     * The checkout intake endpoint — the ONE facade path open to a customer (the storefront
+     * proxies the shopper's JWT). Matched BEFORE {@link #ADMIN_MATCHERS} so this specific path
+     * gets the customer-or-admin rule rather than falling into the admin-only {@code /api/orders/**}.
+     */
+    private static final String ORDER_INTAKE_MATCHER = "/api/orders/intake";
     /** The admin facade surface — the order workflow API + sales aggregation. */
     private static final String[] ADMIN_MATCHERS = {"/api/orders/**", "/api/sales/**", "/api/sales"};
 
@@ -49,7 +57,10 @@ public class SecurityConfig {
                 if (devConsole) {
                     auth.requestMatchers(new AntPathRequestMatcher("/h2-console/**")).permitAll();
                 }
-                auth.requestMatchers(ADMIN_MATCHERS).hasRole(ADMIN_ROLE)
+                // Checkout intake first (more specific): a signed-in shopper OR an admin. Must precede
+                // the ADMIN_MATCHERS rule below, which would otherwise lock /api/orders/** to ADMIN only.
+                auth.requestMatchers(ORDER_INTAKE_MATCHER).hasAnyRole(USER_ROLE, ADMIN_ROLE)
+                    .requestMatchers(ADMIN_MATCHERS).hasRole(ADMIN_ROLE)
                     .anyRequest().authenticated();
             })
             .exceptionHandling(e -> e

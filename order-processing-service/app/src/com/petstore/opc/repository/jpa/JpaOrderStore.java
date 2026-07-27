@@ -39,6 +39,7 @@ public class JpaOrderStore implements OrderStore {
         e.userId = o.userId();
         e.emailId = o.emailId();
         e.locale = o.locale();
+        e.currency = o.currency();
         e.totalPrice = o.totalPrice();
         e.status = o.status();
         e.created = o.created();
@@ -103,8 +104,8 @@ public class JpaOrderStore implements OrderStore {
         for (WarehouseLineEntity le : e.lines) {
             lines.add(new OrderLine(le.itemId, le.productId, le.categoryId, le.quantity, le.unitPrice));
         }
-        return new WarehouseOrder(e.orderId, e.userId, e.emailId, e.locale, e.totalPrice, e.status, lines,
-                toDomain(e.shipTo), toDomain(e.billTo), e.created);
+        return new WarehouseOrder(e.orderId, e.userId, e.emailId, e.locale, e.currency, e.totalPrice, e.status,
+                lines, toDomain(e.shipTo), toDomain(e.billTo), e.created);
     }
 
     private static ContactInfoEmbeddable toEmbeddable(ContactInfo c) {

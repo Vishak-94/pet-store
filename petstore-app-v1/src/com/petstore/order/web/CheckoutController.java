@@ -3,6 +3,7 @@ package com.petstore.order.web;
 import com.petstore.order.security.OrderKeyCipher;
 import com.petstore.order.service.EmptyCartException;
 import com.petstore.order.service.IdempotencyKeyStore;
+import com.petstore.order.service.OrderIntakeUnavailableException;
 import com.petstore.order.service.OrderService;
 import com.petstore.security.AuthenticatedUser;
 import org.slf4j.Logger;
@@ -38,6 +39,8 @@ public class CheckoutController {
     private static final String ERROR_CART_EMPTY = "cart_empty";
     /** Returned when the pre-checkout {@code orderKey} is missing / invalid / already consumed. */
     private static final String ERROR_INVALID_ORDER_KEY = "invalid_order_key";
+    /** Returned (503) when order-processing-service can't be reached — the order was NOT placed; retry. */
+    private static final String ERROR_INTAKE_UNAVAILABLE = "order_intake_unavailable";
 
     private final OrderService orderService;
     private final IdempotencyKeyStore keyStore;
@@ -60,6 +63,23 @@ public class CheckoutController {
      * the PurchaseOrderEvent under the reserved order id and empties the cart. Returns 200
      * {@code {orderId, total, note}} on success; 400 {@code {error:"invalid_order_key"}} when the key is
      * missing/replayed; 400 {@code {error:"cart_empty"}} when the cart is empty.
+     *
+     * <pre>{@code
+     * POST /api/checkout        (Bearer session JWT; identity taken from it, not the body)
+     *   form: orderKey=<encrypted token from POST /pre-checkout>
+     *         shipTo.familyName=Doe&shipTo.givenName=Jane&shipTo.streetName1=1+Main+St
+     *         &shipTo.city=Palo+Alto&shipTo.state=CA&shipTo.zipCode=94301&shipTo.telephone=555-0100
+     *         &billTo.familyName=...&billTo.givenName=...  (bill-to same H7 required set)
+     *
+     * 200 OK  {"orderId":"17...", "total":33.00,
+     *          "note":"submitted to order-processing-service for fulfilment"}
+     *
+     * 400 Bad Request  {"error":"invalid_order_key"}   // missing / forged / replayed orderKey
+     * 400 Bad Request  {"error":"cart_empty"}          // no resolvable items in the cart
+     * }</pre>
+     *
+     * <p>A missing H7 required field throws MissingFormDataException (surfaced by the REST exception
+     * handler); anonymous callers are rejected by SecurityConfig before reaching this handler.
      */
     @PostMapping("/api/checkout")
     public ResponseEntity<Map<String, Object>> checkout(Authentication auth,
@@ -72,6 +92,8 @@ public class CheckoutController {
         String userId = auth.getName();
         String customerId = AuthenticatedUser.userId(auth);
         String email = userId + FALLBACK_EMAIL_DOMAIN;
+        // The session JWT is the Authentication credential — proxied to OPC so it authorizes intake.
+        String bearer = String.valueOf(auth.getCredentials());
 
         // Require + consume the pre-checkout reservation exactly once (same flow as the HTML path):
         // decrypt the hidden token to the server-minted order id and atomically match/consume it.
@@ -86,7 +108,7 @@ public class CheckoutController {
         try {
             // Legacy OrderHTMLAction validated both ship-to and bill-to before ordering.
             ContactInfoForm.requireValid(form.getShipTo(), form.getBillTo());
-            OrderService.OrderPlaced placed = orderService.checkout(orderId, userId, email,
+            OrderService.OrderPlaced placed = orderService.checkout(bearer, orderId, userId, email,
                     form.getShipTo().toContactInfo(), form.getBillTo().toContactInfo());
             return ResponseEntity.ok(Map.of(
                     KEY_ORDER_ID, placed.orderId(),
@@ -95,6 +117,11 @@ public class CheckoutController {
         } catch (EmptyCartException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of(KEY_ERROR, ERROR_CART_EMPTY));
+        } catch (OrderIntakeUnavailableException e) {
+            // OPC unreachable — the order was NOT placed and the cart is intact; the shopper can retry.
+            log.warn("Order intake unavailable for customer {} — order {} not placed", customerId, orderId, e);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of(KEY_ERROR, ERROR_INTAKE_UNAVAILABLE));
         }
     }
 }

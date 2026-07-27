@@ -37,6 +37,8 @@ class WarehouseOrderEntity {
     @Column(name = "user_id") String userId;
     @Column(name = "email_id") String emailId;
     @Column(name = "locale") String locale;
+    /** ISO 4217 currency the total is denominated in (see V4 migration); {@link com.petstore.opc.domain.ApprovalPolicy} keys the auto-approval threshold on it. */
+    @Column(name = "currency") String currency;
     @Column(name = "total_price") double totalPrice;
 
     @Enumerated(EnumType.STRING)

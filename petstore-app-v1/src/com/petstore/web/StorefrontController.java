@@ -5,6 +5,7 @@ import com.petstore.customer.client.CustomerServiceClient;
 import com.petstore.order.security.OrderKeyCipher;
 import com.petstore.order.service.EmptyCartException;
 import com.petstore.order.service.IdempotencyKeyStore;
+import com.petstore.order.service.OrderIntakeUnavailableException;
 import com.petstore.order.service.OrderService;
 import com.petstore.order.web.CheckoutForm;
 import com.petstore.order.web.ContactInfoForm;
@@ -63,6 +64,8 @@ public class StorefrontController {
             "Some address fields are too long or malformed. Please correct them and try again.";
     private static final String MSG_PRICES_UNAVAILABLE =
             "Item prices are temporarily unavailable. Please try again shortly.";
+    private static final String MSG_INTAKE_UNAVAILABLE =
+            "We couldn't place your order right now. Your cart is saved — please try again shortly.";
 
     private final CustomerServiceClient customerClient;
     private final CartService cart;
@@ -82,7 +85,21 @@ public class StorefrontController {
 
     // ---- Checkout (HTML page; customer read via customer-service) ----
 
-    /** Render the checkout page (order summary + the customer's saved address). */
+    /**
+     * Render the checkout page (order summary + the customer's saved address).
+     *
+     * <pre>{@code
+     * GET /checkout
+     * (identity from the session Authentication)
+     *
+     * 200 OK  renders checkout.html
+     *   model: userId, customer (saved address), items, subtotal
+     *          error = "Item prices are temporarily unavailable..." if catalog is down (page still renders)
+     * }</pre>
+     *
+     * <p>Anonymous requests are redirected to {@code /login} by SecurityConfig (see SecurityTest).
+     * The page's JS then fetches a fresh {@code orderKey} from {@code POST /pre-checkout}.
+     */
     @GetMapping("/checkout")
     public String checkoutPage(Authentication auth, Model model) {
         return checkoutModel(auth, model);
@@ -119,6 +136,22 @@ public class StorefrontController {
      * key and re-renders the page with a duplicate-submit message instead of publishing again.
      * On success validates both addresses (H7), publishes the PurchaseOrderEvent, and shows the
      * order-complete page; a validation failure re-renders checkout with the error.
+     *
+     * <pre>{@code
+     * POST /checkout
+     *   form: orderKey=<encrypted token from /pre-checkout>
+     *         shipTo.familyName=Doe&shipTo.givenName=Jane&shipTo.streetName1=1+Main+St
+     *         &shipTo.city=Palo+Alto&shipTo.state=CA&shipTo.zipCode=94301&shipTo.telephone=555-0100
+     *         &billTo.familyName=...&billTo.givenName=...&billTo.streetName1=...  (bill-to same 7 fields)
+     *
+     * 200 OK  renders order_complete.html
+     *   model: orderId="17..." , total=33.00, status="SUBMITTED", cartCount=0
+     * }</pre>
+     *
+     * <p>Edge cases (re-render checkout.html with an {@code error}, order NOT published): bean-validation
+     * failure (field too long / bad email) → "some fields malformed" (token NOT consumed, safe to retry);
+     * missing/replayed {@code orderKey} → "already submitted"; H7 required field missing → the
+     * MissingFormDataException message; empty cart → "Your cart is empty."
      */
     @PostMapping("/checkout")
     public String placeOrder(Authentication auth,
@@ -150,10 +183,12 @@ public class StorefrontController {
             return checkoutModel(auth, model);
         }
 
+        // The session JWT is the Authentication credential — proxied to OPC so it authorizes intake.
+        String bearer = String.valueOf(auth.getCredentials());
         try {
             // Legacy OrderHTMLAction validated both ship-to and bill-to before ordering.
             ContactInfoForm.requireValid(form.getShipTo(), form.getBillTo());
-            OrderService.OrderPlaced placed = orders.checkout(orderId, userId, email,
+            OrderService.OrderPlaced placed = orders.checkout(bearer, orderId, userId, email,
                     form.getShipTo().toContactInfo(), form.getBillTo().toContactInfo());
             model.addAttribute(ATTR_ORDER_ID, placed.orderId());
             model.addAttribute(ATTR_TOTAL, placed.total());
@@ -166,6 +201,13 @@ public class StorefrontController {
             // Validation failed → the order was NOT placed and the reservation is already
             // consumed; the page's JS re-reserves a fresh token on re-render for the retry.
             model.addAttribute(ATTR_ERROR, e.getMessage());
+            return checkoutModel(auth, model);
+        } catch (OrderIntakeUnavailableException e) {
+            // OPC unreachable → the order was NOT placed and the cart is intact; re-render checkout
+            // with a retry notice. The reservation is already consumed, so the page's JS re-reserves
+            // a fresh token on re-render for the retry (same as the validation-failure path).
+            log.warn("Order intake unavailable for customer {} — order {} not placed", customerId, orderId, e);
+            model.addAttribute(ATTR_ERROR, MSG_INTAKE_UNAVAILABLE);
             return checkoutModel(auth, model);
         } catch (EmptyCartException e) {
             model.addAttribute(ATTR_ERROR, MSG_CART_EMPTY);

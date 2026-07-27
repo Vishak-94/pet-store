@@ -27,7 +27,7 @@ class JpaOrderStoreSalesTest {
     JpaOrderStore store;
 
     private static WarehouseOrder order(String id, Instant created, OrderLine... lines) {
-        return new WarehouseOrder(id, "u", "e@x.com", "en_US", 0.0, OrderStatus.PENDING,
+        return new WarehouseOrder(id, "u", "e@x.com", "en_US", "USD", 0.0, OrderStatus.PENDING,
                 List.of(lines), null, null, created);
     }
 

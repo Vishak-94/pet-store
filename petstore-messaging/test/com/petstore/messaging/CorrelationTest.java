@@ -23,7 +23,7 @@ class CorrelationTest {
     void metaPullsCorrelationIdFromScope() {
         Correlation.set("corr-42");
         var event = new PurchaseOrderEvent(Events.meta(PurchaseOrderEvent.TYPE),
-                "1001", "u", "u@x.com", "en_US", 10.0, java.util.List.of(), null, null);
+                "1001", "u", "u@x.com", "en_US", 10.0, java.util.List.of(), null, null, "USD");
         assertThat(event.meta().correlationId()).isEqualTo("corr-42");
     }
 

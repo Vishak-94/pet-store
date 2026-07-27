@@ -30,8 +30,12 @@ class AdminServiceTest {
     private final AdminService admin = new AdminService(orders, approvalGateway, statusGateway);
 
     private static WarehouseOrder order(String id, OrderStatus status) {
-        return new WarehouseOrder(id, "u", "e@x.com", "en_US", 10.0, status, List.of(),
-                null, null, Instant.now());
+        return order(id, status, Instant.parse("2026-01-01T00:00:00Z"));
+    }
+
+    private static WarehouseOrder order(String id, OrderStatus status, Instant created) {
+        return new WarehouseOrder(id, "u", "e@x.com", "en_US", "USD", 10.0, status, List.of(),
+                null, null, created);
     }
 
     @Test

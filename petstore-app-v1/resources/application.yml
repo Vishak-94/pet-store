@@ -42,6 +42,11 @@ services:
   # Login is delegated to auth-service (central IdP); auth-client holds the path.
   auth:
     base-url: ${AUTH_SERVICE_URL:http://localhost:8086}
+  # Checkout places the order via a SYNCHRONOUS call to order-processing-service (OPC)
+  # /api/orders/intake (see DECISIONS.md). Only the base URL is config; the intake path
+  # lives in the order-processing-client SDK.
+  order-processing:
+    base-url: ${ORDER_PROCESSING_SERVICE_URL:http://localhost:8088}
 
 # Health / readiness probes + metrics (Spring Boot Actuator). Matches the other
 # services; keep the exposed set minimal (no env/beans/heapdump on the public port).

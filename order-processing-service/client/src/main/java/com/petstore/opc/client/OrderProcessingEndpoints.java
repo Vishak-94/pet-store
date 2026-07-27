@@ -12,6 +12,16 @@ public final class OrderProcessingEndpoints {
 
     public static final String DEFAULT_BASE_URL = "http://localhost:8088";
 
+    /**
+     * POST — synchronous order intake from the storefront checkout: /api/orders/intake.
+     * Unlike the rest of this facade (ADMIN-only), this endpoint is customer-authenticated —
+     * the storefront proxies the shopper's JWT — because it IS the checkout write path (the
+     * modern replacement for publishing a PurchaseOrderEvent to PurchaseOrderQueue). It persists
+     * the order + runs the auto-approval policy + dispatches the outbound event via the outbox,
+     * exactly as the queue listener does, then returns the persisted id + status synchronously.
+     */
+    public static final String ORDER_INTAKE = "/api/orders/intake";
+
     /** GET — order ids by status: /api/orders?status=PENDING */
     public static final String ORDERS = "/api/orders";
 

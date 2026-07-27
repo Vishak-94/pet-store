@@ -12,6 +12,13 @@ import java.util.List;
  * legacy {@code OrderEJBAction} collected and validated at checkout and stored on
  * the {@code PurchaseOrder}. They are nullable so older producers / serialized
  * messages remain compatible; the checkout form populates them.
+ *
+ * <p>{@code currency} is the ISO 4217 code ({@code "USD"}, {@code "JPY"}) the order
+ * total is denominated in. It is the money dimension the legacy model never had — the
+ * legacy {@code PurchaseOrderMDB.canIApprove} conflated it with {@code locale} (its own
+ * comment calls that "a stub for converting currency"). It is nullable/additive so older
+ * messages still deserialize; a null is treated as {@code USD} downstream (matching the
+ * storefront's always-{@code en_US} behaviour). Appended last to preserve field positions.
  */
 public record PurchaseOrderEvent(
         EventMeta meta,
@@ -22,7 +29,8 @@ public record PurchaseOrderEvent(
         double totalPrice,
         List<Line> lines,
         ContactInfo shipTo,
-        ContactInfo billTo) {
+        ContactInfo billTo,
+        String currency) {
 
     public record Line(String itemId, String productId, String categoryId,
                        int quantity, double unitPrice) {

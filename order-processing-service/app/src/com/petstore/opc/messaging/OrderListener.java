@@ -22,7 +22,15 @@ import java.util.List;
  * Consumes {@link PurchaseOrderEvent}s from the PurchaseOrderQueue (published by
  * the monolith checkout) — a QUEUE, so exactly one warehouse instance processes
  * each order. Uses the shared petstore-messaging contract; no local message class.
+ *
+ * @deprecated Order intake moved to the synchronous REST endpoint
+ * {@code POST /api/orders/intake} (see {@code OrderProcessingApiController#intake} and the
+ * ADR in {@code DECISIONS.md}); the storefront now calls OPC directly instead of publishing to
+ * PurchaseOrderQueue. This listener is retained (and still functional) as a fallback / parity
+ * reference until the queue path is removed — both paths converge on the same
+ * {@link FulfilmentService#receiveOrder}, so behaviour is identical whichever delivers the order.
  */
+@Deprecated
 @Component
 public class OrderListener {
 
@@ -34,6 +42,17 @@ public class OrderListener {
         this.fulfilment = fulfilment;
     }
 
+    /**
+     * Consume one {@link PurchaseOrderEvent} off PurchaseOrderQueue: adopt its correlation
+     * id, map it (lines + shipTo/billTo contacts + {@code occurredAt}→created) into a PENDING
+     * {@link WarehouseOrder}, and hand it to {@link FulfilmentService#receiveOrder} (which
+     * persists + auto-approves or leaves PENDING). Idempotent by design — the service dedups
+     * on {@code findById}, and a duplicate that races past that guard is caught here as a
+     * primary-key {@link DataIntegrityViolationException} and swallowed (ack, no redelivery),
+     * so JMS at-least-once redeliveries never double-process an order.
+     *
+     * @param msg the inbound purchase-order event (from the storefront checkout)
+     */
     @JmsListener(destination = Destinations.PURCHASE_ORDER_NAME, containerFactory = "queueFactory")
     public void onOrder(PurchaseOrderEvent msg) {
         // Adopt the inbound event's correlation id for this handling so any downstream event
@@ -50,7 +69,7 @@ public class OrderListener {
             try {
                 fulfilment.receiveOrder(new WarehouseOrder(
                         msg.orderId(), msg.userId(), msg.emailId(), msg.locale(),
-                        msg.totalPrice(), OrderStatus.PENDING, lines,
+                        msg.currency(), msg.totalPrice(), OrderStatus.PENDING, lines,
                         toDomain(msg.shipTo()), toDomain(msg.billTo()), occurredAt(msg)));
             } catch (DataIntegrityViolationException dup) {
                 // Idempotency backstop (Option 3): the order_id primary key rejected a duplicate

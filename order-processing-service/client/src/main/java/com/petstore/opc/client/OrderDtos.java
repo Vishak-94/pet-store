@@ -28,9 +28,52 @@ public final class OrderDtos {
                           int quantity, double unitPrice) {
     }
 
-    /** Full order detail (for the admin console). */
+    /**
+     * Ship-to / bill-to contact info on the checkout intake request — the wire form of the
+     * domain {@code ContactInfo} (and the messaging {@code PurchaseOrderEvent.ContactInfo}).
+     * All fields nullable at the DTO layer; the storefront already enforces the legacy H7
+     * required-field set before it calls, and the whole block is optional (the JSON checkout
+     * path may not collect contacts), so it carries no bean-validation constraints here.
+     */
+    public record ContactInfoDto(String familyName, String givenName, String streetName1,
+                                 String streetName2, String city, String state, String zipCode,
+                                 String country, String telephone, String email) {
+    }
+
+    /**
+     * Synchronous checkout intake payload (storefront → OPC {@code POST /api/orders/intake}) —
+     * the REST replacement for the {@code PurchaseOrderEvent} that used to go on PurchaseOrderQueue.
+     * Carries the same business fields; there is deliberately NO {@code status} (OPC assigns
+     * PENDING then runs the auto-approval policy) and NO {@code created} (stamped server-side).
+     *
+     * <p>{@code orderId} is the storefront's server-minted synchronizer token — passing it (rather
+     * than letting OPC mint one) preserves the double-submit idempotency guard: a refresh / replay
+     * carries the same id and OPC's {@code order_id} primary-key dedup collapses it to a no-op.
+     * {@code currency} is ISO 4217 (nullable → {@code USD} downstream). Prices are trusted from the
+     * caller here exactly as the queue payload was — the storefront resolves them from catalog.
+     */
+    public record CheckoutRequest(@NotBlank String orderId, @NotBlank String userId, String emailId,
+                                  String locale, String currency, double totalPrice,
+                                  @NotEmpty @Valid List<LineDto> lines,
+                                  ContactInfoDto shipTo, ContactInfoDto billTo) {
+    }
+
+    /**
+     * Result of a successful intake: the persisted order id, its resolved workflow status
+     * (PENDING when it needs manual approval, APPROVED when it cleared the auto-approval
+     * threshold), and the stored total. Lets the storefront show the outcome without a
+     * follow-up fetch. A duplicate submit returns the ALREADY-stored order's id + status.
+     */
+    public record CheckoutResponse(String orderId, String status, double totalPrice) {
+    }
+
+    /**
+     * Full order detail (for the admin console). {@code currency} is the ISO 4217 code the
+     * total is denominated in (kept distinct from {@code locale}, which is display/i18n); it is
+     * the LAST component so the JSON is additive — an older client deserializes without it.
+     */
     public record OrderView(String orderId, String userId, String emailId, String locale,
-                            double totalPrice, String status, List<LineDto> lines) {
+                            double totalPrice, String status, List<LineDto> lines, String currency) {
     }
 
     /** The result of a status query. */
