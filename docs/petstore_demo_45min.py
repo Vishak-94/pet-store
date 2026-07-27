@@ -43,6 +43,16 @@ CODEKW = RGBColor(0x7F, 0xB5, 0xF5)   # keyword-ish accent
 WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
 SUB    = RGBColor(0xC5, 0xD3, 0xE6)
 
+# per-service accent colours (match the architecture diagram borders)
+STORE_ACCENT = BLUE
+AUTH_ACCENT  = RGBColor(0x6B, 0x5B, 0x3E)   # olive
+CUST_ACCENT  = PURPLE
+CAT_ACCENT   = RGBColor(0x2E, 0x86, 0xAB)   # teal-blue
+OPC_ACCENT   = RGBColor(0xB8, 0x86, 0x0B)   # dark gold
+INV_ACCENT   = AMBER
+ADMIN_ACCENT = RED
+NOTE_ACCENT  = GREEN
+
 prs = Presentation()
 prs.slide_width = Inches(13.333)   # 16:9
 prs.slide_height = Inches(7.5)
@@ -217,6 +227,46 @@ def gap_slide(num, construct, subtitle, legacy_pts, problem_pts, response_pts, f
     return s
 
 
+def service_slide(name, port, legacy_origin, accent, responsibilities,
+                  api_pts, sdk_line, db_line, jms_line, footer=None):
+    """One detailed slide per migrated service.
+       Left = what it does (responsibilities) + API surface;
+       right light panel = the published client SDK, its database, and its JMS role."""
+    s = slide()
+    title_bar(s, f"{name}  ·  :{port}", legacy_origin, tag="service")
+    LW = Inches(6.35)
+    # ── left: responsibilities
+    textbox(s, Inches(0.5), Inches(1.26), LW, Inches(0.34),
+            "What it does", size=15, color=accent, bold=True)
+    bullets(s, Inches(0.5), Inches(1.66), LW, Inches(2.7),
+            [(t, {**o, "size": o.get("size", 13)}) for t, o in
+             ((p if isinstance(p, tuple) else (p, {})) for p in responsibilities)], size=13, gap=5)
+    # ── left: API surface
+    textbox(s, Inches(0.5), Inches(4.5), LW, Inches(0.34),
+            "API surface (HTTP)", size=15, color=BLUE, bold=True)
+    bullets(s, Inches(0.5), Inches(4.9), LW, Inches(2.3),
+            [(t, {**o, "size": o.get("size", 12)}) for t, o in
+             ((p if isinstance(p, tuple) else (p, {})) for p in api_pts)], size=12, gap=4)
+    # ── right: SDK / DB / JMS panel
+    rect(s, Inches(7.05), Inches(1.26), Inches(5.85), Inches(5.95), LIGHT)
+    textbox(s, Inches(7.28), Inches(1.4), Inches(5.4), Inches(0.34),
+            "Published client SDK", size=14, color=GREEN, bold=True)
+    textbox(s, Inches(7.28), Inches(1.78), Inches(5.4), Inches(1.0),
+            [(sdk_line, {"size": 12, "color": NAVY})])
+    textbox(s, Inches(7.28), Inches(3.05), Inches(5.4), Inches(0.34),
+            "Database", size=14, color=AMBER, bold=True)
+    textbox(s, Inches(7.28), Inches(3.43), Inches(5.4), Inches(1.1),
+            [(db_line, {"size": 12, "color": NAVY})])
+    textbox(s, Inches(7.28), Inches(4.8), Inches(5.4), Inches(0.34),
+            "JMS role", size=14, color=RED, bold=True)
+    textbox(s, Inches(7.28), Inches(5.18), Inches(5.4), Inches(1.9),
+            [(jms_line, {"size": 12, "color": NAVY})])
+    if footer:
+        textbox(s, Inches(0.5), Inches(7.05), Inches(6.35), Inches(0.4),
+                footer, size=11, color=GREY)
+    return s
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 1 — TITLE
 # ═══════════════════════════════════════════════════════════════════════════
@@ -250,9 +300,10 @@ table(s, Inches(0.5), Inches(1.4), Inches(12.3), Inches(5.4), [
     ["6", "JMS message migration — XML → JSON (Anti-Corruption Layer)", "4 min"],
     ["7", "What we fixed — parity audit results", "4 min"],
     ["8", "Target as-built architecture", "3 min"],
-    ["9", "CODE WALKTHROUGH (live)", "10 min"],
-    ["10", "MongoDB stretch goal", "2 min"],
-    ["11", "Wrap-up & Q&A", "5 min"],
+    ["9", "Service inventory — summary + one slide per service", "8 min"],
+    ["10", "CODE WALKTHROUGH (live)", "10 min"],
+    ["11", "MongoDB stretch goal", "2 min"],
+    ["12", "Wrap-up & Q&A", "5 min"],
 ], col_widths=[Inches(0.8), Inches(9.5), Inches(2.0)], fsize=13)
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -681,6 +732,208 @@ textbox(s, Inches(0.55), Inches(6.15), Inches(12.2), Inches(0.9), [
 image_slide("Target Architecture — As-Built",
             "8 Spring Boot services · standalone Artemis · 2 queues + 3 topics + DLQ · 5 client SDKs",
             "petstore_architecture.png", tag="3 min")
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 10b — SERVICE INVENTORY (summary) — one row per service, then a slide each
+# ═══════════════════════════════════════════════════════════════════════════
+s = slide()
+title_bar(s, "Service Inventory — Summary",
+          "8 services · 5 published client SDKs · 2 shared libraries · DB-per-service · one broker",
+          tag="summary")
+table(s, Inches(0.3), Inches(1.28), Inches(12.75), Inches(4.75), [
+    ["Service (port)", "From legacy", "Owns / DB", "Publishes SDK", "JMS role"],
+    ["petstore-app-v1 (8080)", "petstore.ear web", "no DB (broker client)", "—", "none (sync REST intake)"],
+    ["auth-service (8086)", "SignOn EJB", "accounts · H2", "auth-client", "none"],
+    ["customer-service (8081)", "Customer CMP", "profile/addr/card · H2", "customer-service-client", "none"],
+    ["catalog-service (8083)", "Catalog EJB", "catalog · H2 / MongoDB", "catalog-service-client", "none"],
+    ["order-processing (8088)", "opc.ear", "orders+outbox · H2 / MongoDB", "order-processing-client", "consume+publish (core)"],
+    ["inventory-service (8085)", "supplier.ear", "stock+dedup · H2", "inventory-service-client", "consume+publish"],
+    ["admin-office (8082)", "admin.ear (Swing)", "no DB (delegates to OPC)", "—", "none"],
+    ["notification (8087)", "Mail*MDB", "no DB (stateless)", "—", "consume only (topics+DLQ)"],
+], col_widths=[Inches(2.7), Inches(2.05), Inches(2.85), Inches(2.75), Inches(2.4)], fsize=10)
+rect(s, Inches(0.3), Inches(6.15), Inches(12.75), Inches(1.0), LIGHT)
+textbox(s, Inches(0.5), Inches(6.24), Inches(12.4), Inches(0.85), [
+    ("Shared libraries (in-process, not services): cart-lib (session cart) · petstore-messaging "
+     "(JMS destinations + JSON event envelope).", {"size": 12, "color": NAVY, "bold": True, "space_after": 3}),
+    ("Each stateful service owns its own schema (DB-per-service); services never touch another's tables — "
+     "they call its client SDK over HTTP or react to its JMS events. Follow-up slides cover each service.",
+     {"size": 12, "color": GREY})])
+
+# ── Service 1 — petstore-app-v1 (storefront) ─────────────────────────────────
+service_slide(
+    "petstore-app-v1  (Storefront)", 8080, "From the legacy petstore.ear web tier (WAF + JSP)",
+    STORE_ACCENT,
+    responsibilities=[
+        ("The customer-facing shop: browse categories/products/items, search, session cart, checkout.", {}),
+        ("Server-rendered Thymeleaf UI with i18n (en/ja/zh) — replaces the legacy WAF + JSP screen flow.", {}),
+        ("Persists NOTHING itself: it is a pure client of the backing services + the broker.", {}),
+        ("Embeds cart-lib in-process; resolves cart items via the catalog SDK.", {}),
+        ("Live stock badge / quantity cap driven by the inventory SDK.", {}),
+    ],
+    api_pts=[
+        ("GET / /category /product /item /search", {}),
+        ("POST /cart add/set/update/delete", {}),
+        ("GET/POST /checkout  → sync REST intake to OPC (JWT forwarded)", {}),
+    ],
+    sdk_line="Publishes none (it's an edge app, not a called service). IMPORTS five: "
+             "auth-client, catalog-service-client, customer-service-client, "
+             "order-processing-client, inventory-service-client.",
+    db_line="No database. State lives in the session cart (cart-lib, ~15-min TTL) and in the "
+            "downstream services it calls.",
+    jms_line="No JMS. Checkout is synchronous REST to OPC (immediate authoritative result). "
+             "The legacy fire-and-forget PurchaseOrder-XML publish was replaced by that REST intake "
+             "(OPC still keeps a PurchaseOrderQueue listener as an alt async path).",
+    footer="Legacy mapping: petstore.ear web tier → thin Spring MVC storefront, no business data of its own.")
+
+# ── Service 2 — auth-service ─────────────────────────────────────────────────
+service_slide(
+    "auth-service  (central IdP)", 8086, "From the legacy SignOn EJB — now the one identity provider",
+    AUTH_ACCENT,
+    responsibilities=[
+        ("The single identity provider: authenticates users and MINTS RS256 JWTs.", {}),
+        ("The ONLY holder of the private signing key and of user credentials.", {}),
+        ("Provisions credentials for new customers (called by customer-service).", {}),
+        ("Every other service verifies JWTs with the public key only (auth-client) — no shared secret.", {}),
+    ],
+    api_pts=[
+        ("POST /auth/login  → mint JWT", {}),
+        ("POST /auth/accounts  → provision credential", {}),
+    ],
+    sdk_line="Publishes auth-client — RS256 verify (public key) + a login helper. Imported by "
+             "storefront, customer, admin-office, OPC, inventory (everyone that authenticates or "
+             "verifies a token).",
+    db_line="Owns the account/credential store · file H2. Sole owner of identity data — "
+            "no other service stores credentials.",
+    jms_line="None. Auth is request/response only.",
+    footer="Legacy mapping: SignOn EJB → a standalone IdP; centralises what was scattered auth logic.")
+
+# ── Service 3 — customer-service ─────────────────────────────────────────────
+service_slide(
+    "customer-service", 8081, "From the legacy Customer / Account CMP entity beans",
+    CUST_ACCENT,
+    responsibilities=[
+        ("Owns customer PII: profile, contact/address, and credit-card data.", {}),
+        ("Registers new customers, then calls auth-service to provision their credential.", {}),
+        ("Restores legacy new-customer profile defaults + preferred-language handling.", {}),
+    ],
+    api_pts=[
+        ("POST /register", {}),
+        ("GET /customer/{id}", {}),
+        ("PUT /account /profile /card", {}),
+    ],
+    sdk_line="Publishes customer-service-client — customer API + DTOs. Imported by the storefront "
+             "(profile/registration screens).",
+    db_line="Owns the customer schema (profile / address / card) · file H2. The single owner of "
+            "customer PII — replaces the CMP tables duplicated across legacy EARs.",
+    jms_line="None. Imports auth-client to provision credentials over HTTP.",
+    footer="Legacy mapping: Customer/Account CMP beans → a bounded customer context with its own schema.")
+
+# ── Service 4 — catalog-service ──────────────────────────────────────────────
+service_slide(
+    "catalog-service", 8083, "From the legacy Catalog EJB — read-mostly, multi-locale",
+    CAT_ACCENT,
+    responsibilities=[
+        ("Serves the product catalog: categories, products, items, keyword search.", {}),
+        ("Read-mostly, multi-locale (locale-split tables/collections; en/ja/zh).", {}),
+        ("Restored the legacy tokenized multi-field LIKE search semantics (parity H6).", {}),
+        ("Second service (with OPC) proven on MongoDB behind the same repository port.", {}),
+    ],
+    api_pts=[
+        ("GET /api/categories /products /items", {}),
+        ("GET /api/items?keyword=...", {}),
+    ],
+    sdk_line="Publishes catalog-service-client — catalog API + DTOs. Imported by the storefront and, "
+             "in-process, by cart-lib (to resolve cart line items).",
+    db_line="Owns the catalog schema · file H2 by default, OR MongoDB (@Profile mongo) — 3 "
+            "collections with an embedded locale map. Same port, swappable adapter.",
+    jms_line="None. Pure read API.",
+    footer="Legacy mapping: Catalog EJB → a read-optimised service; the ItemDto still carries the legacy attr1..5 slots.")
+
+# ── Service 5 — order-processing (OPC) ───────────────────────────────────────
+service_slide(
+    "order-processing-service  (OPC)", 8088, "From the legacy opc.ear — the authoritative order owner",
+    OPC_ACCENT,
+    responsibilities=[
+        ("The authoritative owner of orders and their workflow status for the whole system.", {}),
+        ("Intake → auto-approve under a currency threshold, else PENDING for a human admin.", {}),
+        ("Owns the order lifecycle enum + guarded transitions; @Version stops approve/deny races.", {}),
+        ("Transactional outbox: order write + event emit commit atomically (no lost/dup publish).", {}),
+        ("Re-drives APPROVED backorders on RestockTopic (the restored legacy processPendingPO).", {}),
+    ],
+    api_pts=[
+        ("POST /api/orders/intake  (sync checkout)", {}),
+        ("GET/POST /api/orders  approve|deny|status", {}),
+        ("GET /api/sales  (revenue aggregation)", {}),
+    ],
+    sdk_line="Publishes order-processing-client — OPC facade + intake DTOs + endpoint constants. "
+             "Imported by the storefront (checkout intake) and admin-office (approve/deny/sales).",
+    db_line="Owns orders + outbox (authoritative) · file H2 by default (Flyway schema), OR MongoDB "
+            "(@Profile mongo) with multi-document transactions on replica set rs0.",
+    jms_line="The JMS hub. CONSUMES PurchaseOrderQueue, InvoiceTopic, RestockTopic; "
+             "PUBLISHES OrderApprovedEvent → ApprovedOrderQueue and OrderStatusEvent → "
+             "OrderStatusTopic. All outbound events go through the outbox relay.",
+    footer="Legacy mapping: opc.ear (PurchaseOrderMDB + OPCAdminFacade) → one service, single order writer.")
+
+# ── Service 6 — inventory-service ────────────────────────────────────────────
+service_slide(
+    "inventory-service  (fulfilment)", 8085, "From the legacy supplier.ear — fulfils approved orders",
+    INV_ACCENT,
+    responsibilities=[
+        ("Fulfils approved orders: reserves stock and ships, or backorders if short.", {}),
+        ("Oversell guard: pessimistic SELECT…FOR UPDATE + DB CHECK(qty>=0) (the one sanctioned fix).", {}),
+        ("Idempotent: a fulfilled_order dedup ledger stops a redelivered order double-decrementing.", {}),
+        ("Suppliers restock stock, which re-drives backorders across the system.", {}),
+    ],
+    api_pts=[
+        ("GET /api/inventory  (stock read)", {}),
+        ("POST /api/inventory  restock (SUPPLIER role)", {}),
+    ],
+    sdk_line="Publishes inventory-service-client — stock read SDK with a single-flight cache. "
+             "Imported by the storefront (live stock badge / quantity cap). The newest SDK.",
+    db_line="Owns the inventory schema (on-hand stock) + the dedup ledger · file H2. Sole owner "
+            "of stock levels.",
+    jms_line="CONSUMES ApprovedOrderQueue (reserve+ship). PUBLISHES InvoiceEvent → InvoiceTopic "
+             "(ship confirmation) and RestockEvent → RestockTopic (triggers OPC's backorder re-drive).",
+    footer="Legacy mapping: supplier.ear → a fulfilment service; container locking replaced by an explicit row lock.")
+
+# ── Service 7 — admin-office-service ─────────────────────────────────────────
+service_slide(
+    "admin-office-service  (console)", 8082, "From the legacy admin.ear Swing / Java Web Start client",
+    ADMIN_ACCENT,
+    responsibilities=[
+        ("The back-office console: list / approve / deny orders, view sales.", {}),
+        ("Server-rendered Thymeleaf UI replacing the dead Swing / Java Web Start rich client.", {}),
+        ("Owns NO data — a thin console that delegates every action to OPC via its SDK.", {}),
+        ("Admin logs in through the same central IdP (JWT) as everyone else.", {}),
+    ],
+    api_pts=[
+        ("GET /warehouse/orders  (console UI)", {}),
+        ("POST approve | deny", {}),
+    ],
+    sdk_line="Publishes none. IMPORTS order-processing-client (all order/sales actions) and "
+             "auth-client (login + verify).",
+    db_line="No database. Every read/write is delegated to OPC — admin-office is stateless.",
+    jms_line="None. Pure HTTP delegation to OPC.",
+    footer="Legacy mapping: admin.ear Swing client → a normal web console; same operator tasks in the browser.")
+
+# ── Service 8 — notification-service ─────────────────────────────────────────
+service_slide(
+    "notification-service", 8087, "From the legacy Mail*MDB beans — a pure event observer",
+    NOTE_ACCENT,
+    responsibilities=[
+        ("Sends customer emails: approval / denial / shipped / completed.", {}),
+        ("A pure, stateless event observer — persists nothing, owns no business state.", {}),
+        ("Also the operator safety net: logs DLQ + ExpiryQueue messages at ERROR.", {}),
+    ],
+    api_pts=[
+        ("No public HTTP API — it is a message consumer only.", {}),
+    ],
+    sdk_line="Publishes none — nothing calls it. It only subscribes to the broker.",
+    db_line="No database — stateless. (Idempotency is deferred by decision: harmless while the "
+            "mailer only logs.)",
+    jms_line="CONSUME-ONLY. Subscribes InvoiceTopic + OrderStatusTopic (emails) and the "
+             "DLQ + ExpiryQueue (ERROR-log observer). Publishes nothing.",
+    footer="Legacy mapping: the Mail*MDB beans → one notification service; also closes the DLQ 'black hole'.")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 11 — CODE WALKTHROUGH divider
