@@ -52,7 +52,13 @@ public class SecurityConfig {
     /** AuthenticationManager backed solely by the customer-service provider. */
     @Bean
     AuthenticationManager authenticationManager(CustomerServiceAuthProvider provider) {
-        return new ProviderManager(provider);
+        ProviderManager manager = new ProviderManager(provider);
+        // KEEP the credential (the RS256 JWT) on the stored Authentication. ProviderManager
+        // erases credentials by default, but this storefront deliberately holds the JWT as the
+        // credential so downstream calls (checkout → OPC, customer-service) can forward it as a
+        // Bearer token. Erasing it would leave getCredentials()==null → "Bearer null" → 401.
+        manager.setEraseCredentialsAfterAuthentication(false);
+        return manager;
     }
 
     /** Applies the customer's stored preferredLanguage to the session locale on sign-on. */

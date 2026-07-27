@@ -10,11 +10,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -72,6 +77,27 @@ class SecurityTest {
                 .thenReturn(Optional.of(new AuthClient.LoginResult("jwt-token", "uid-1", List.of("USER"))));
         mvc.perform(formLogin().user("j2ee").password("j2ee"))
                 .andExpect(authenticated().withUsername("j2ee"));
+    }
+
+    @Test
+    void formLogin_retainsJwtAsCredential_notErased() throws Exception {
+        // Regression: ProviderManager erases credentials by default, which would wipe the JWT
+        // that CustomerServiceAuthProvider stashes as the credential. The storefront forwards
+        // that JWT as a Bearer token to OPC at checkout — if it were erased, getCredentials()
+        // returns null → "Bearer null" → OPC 401 → checkout fails. SecurityConfig disables
+        // erasure; this test pins that the stored Authentication keeps the JWT.
+        when(authClient.login("j2ee", "j2ee"))
+                .thenReturn(Optional.of(new AuthClient.LoginResult("jwt-token", "uid-1", List.of("USER"))));
+
+        MvcResult result = mvc.perform(formLogin().user("j2ee").password("j2ee"))
+                .andExpect(authenticated().withUsername("j2ee"))
+                .andReturn();
+
+        SecurityContext context = (SecurityContext) result.getRequest().getSession()
+                .getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
+        Authentication stored = context.getAuthentication();
+        assertThat(stored.getCredentials()).isEqualTo("jwt-token");        // NOT erased to null
+        assertThat(stored.getDetails()).isEqualTo("uid-1");                // stable userId survives too
     }
 
     @Test
