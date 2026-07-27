@@ -285,6 +285,43 @@ table(s, Inches(0.35), Inches(1.32), Inches(12.65), Inches(5.7), [
 ], col_widths=[Inches(3.4), Inches(5.0), Inches(4.25)], fsize=10)
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 5b — PRIMER: WHAT IS EJB (and why it dominates the legacy app)
+# ═══════════════════════════════════════════════════════════════════════════
+s = slide()
+title_bar(s, "Primer — What is EJB, and why it's everywhere here",
+          "Enterprise JavaBeans: the J2EE server-side component model the legacy app is built on", tag="context")
+bullets(s, Inches(0.5), Inches(1.35), Inches(6.5), Inches(5.7), [
+    ("EJB = Enterprise JavaBeans — the standard server-side component model of J2EE (2000s).",
+     {"bold": True, "size": 16, "color": BLUE}),
+    ("A bean is a managed Java object; the app server (Sun J2EE RI) hosts it and supplies "
+     "enterprise services declaratively — you write logic, the container adds the plumbing:",
+     {"size": 14}),
+    ("Transactions, security, pooling, remoting, lifecycle.", {"level": 1, "size": 14}),
+    ("Persistence — CMP (Container-Managed Persistence) auto-maps entity beans to DB tables.",
+     {"level": 1, "size": 14, "color": AMBER}),
+    ("Three bean flavours the Pet Store uses:", {"bold": True, "size": 16, "color": BLUE}),
+    ("Session beans — business logic (e.g. ShoppingCart, SignOn, OPCAdminFacade).", {"level": 1, "size": 14}),
+    ("Entity beans (CMP) — persistent data (Customer, Account, PurchaseOrder, Inventory…).",
+     {"level": 1, "size": 14}),
+    ("Message-driven beans (MDB) — JMS consumers (PurchaseOrderMDB, InvoiceMDB, Mail*MDB).",
+     {"level": 1, "size": 14}),
+])
+rect(s, Inches(7.2), Inches(1.5), Inches(5.65), Inches(5.3), LIGHT)
+textbox(s, Inches(7.42), Inches(1.62), Inches(5.25), Inches(0.5),
+        "Why it blocks a straight port", size=15, color=NAVY, bold=True)
+bullets(s, Inches(7.42), Inches(2.2), Inches(5.25), Inches(4.5), [
+    ("Every bean needs an interface trio + XML: Home + Remote/Local + Bean class, "
+     "wired in ejb-jar.xml / sun-j2ee-ri.xml.", {"size": 13}),
+    ("Beans are found by JNDI lookup via a ServiceLocator — not injected. Hard to unit-test "
+     "(needs a running container).", {"size": 13, "color": RED}),
+    ("Runs only on a J2EE 1.3 app server on javax.* APIs — no such server on Java 21.", {"size": 13, "color": RED}),
+    ("Modern mapping:", {"size": 14, "bold": True, "color": GREEN}),
+    ("Session bean → Spring @Service", {"level": 1, "size": 13, "color": GREEN}),
+    ("Entity bean (CMP) → JPA @Entity + repository port", {"level": 1, "size": 13, "color": GREEN}),
+    ("MDB → @JmsListener; JNDI/ServiceLocator → dependency injection", {"level": 1, "size": 13, "color": GREEN}),
+], gap=8)
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 6 — MIGRATION STRATEGY & PRINCIPLES
 # ═══════════════════════════════════════════════════════════════════════════
 s = slide()
