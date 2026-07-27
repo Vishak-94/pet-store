@@ -266,6 +266,8 @@ sequenceDiagram
     participant CartCtl as CartController
     participant Cart as CartService
     participant Ops as CartOperations (cart-lib)
+    participant Stock as StockController
+    participant InvSDK as InventoryClient
 
     Shopper->>Filter: GET /product?id=FI-SW-01
     Filter->>Filter: read/mint cartId cookie, set request attr
@@ -273,6 +275,12 @@ sequenceDiagram
     Cat->>CatSDK: getProduct / getItems(locale)
     CatSDK-->>Cat: DTOs
     Cat-->>Shopper: product.html (items + cartQty)
+
+    Note over Shopper,InvSDK: after load — stepper caps "+" at on-hand stock (UX only, off the render path)
+    Shopper->>Stock: GET /api/stock/EST-1 (one per stepper)
+    Stock->>InvSDK: stockFor("EST-1")
+    InvSDK-->>Stock: Optional<qty>
+    Stock-->>Shopper: 200 {itemId, quantity} | 204 (unavailable → uncapped)
 
     Shopper->>Filter: POST /cart/set?itemId=EST-1&qty=2
     Filter->>CartCtl: forward (cartId on request)
@@ -362,8 +370,9 @@ sequenceDiagram
 | GET | `/` | `CatalogController.main` | public | category list (locale-aware) |
 | GET | `/category` | `CatalogController.category` | public | `?id=`, `?start=` |
 | GET | `/product` | `CatalogController.product` | public | `?id=`, seeds cart qty |
-| GET | `/item` | `CatalogController.item` | public | `?id=` |
+| GET | `/item` | `CatalogController.item` | public | `?id=`; composes coarse stock badge (`resolveStock`) |
 | GET | `/search` | `CatalogController.search` | public | `?keyword=` |
+| GET | `/api/stock/{itemId}` | `StockController.stock` | public | after-load stepper cap; proxies `InventoryClient`; `204` when unavailable |
 | GET | `/cart` | `CartController.view` | public | full cart page |
 | POST | `/cart/set` | `CartController.setQuantity` | public | JSON; qty≤0 removes |
 | POST | `/cart/add` | `CartController.add` | public | redirect to `/cart` |

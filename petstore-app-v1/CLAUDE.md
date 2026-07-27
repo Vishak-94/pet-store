@@ -20,6 +20,7 @@ See also: [`docs/LLD.md`](docs/LLD.md) (class + sequence diagrams), the repo roo
 |---------|-------|
 | _(root)_ | `PetStoreApplication` — `@SpringBootApplication @EnableJms @ConfigurationPropertiesScan` |
 | `catalog/web`, `catalog/domain`, `catalog/` | `CatalogController`; framework-free view models `Category`/`Product`/`Item`; `CatalogViewMapper` (SDK DTO → view model) |
+| `inventory/web`, `inventory/client` | `StockController` (`GET /api/stock/{itemId}` — same-origin proxy for the after-load stepper cap); `InventoryClient` (thin RestClient over inventory-service's public availability read; no SDK jar exists) |
 | `cart/web`, `cart/service`, `cart/config`, `cart/domain` | `CartController`, `CartIdFilter`; `CartService` (adapter over cart-lib); `CartConfig` (wires `CartStore`/`CartOperations`); `CartItem` |
 | `order/web`, `order/service` | `CheckoutController` (JSON), `CheckoutForm`, `ContactInfoForm`, `MissingFormDataException`; `OrderService`, `OrderIdGenerator`, `EmptyCartException` |
 | `customer/web` | `CustomerController` — account self-service (M4) |
@@ -117,6 +118,18 @@ The JWT lives as the `Authentication` credential and is forwarded as a Bearer to
   as params). Both are in the `authenticated()` matcher and both are CSRF-exempt.
 - CSRF is **disabled** for `/checkout`, `/api/checkout`, `/cart/**`, `/admin/**` (form/AJAX posts).
 - `GlobalModelAdvice` adds `cartCount` to every `@Controller` view (not `@RestController`).
+- **Live stock is a display/UX enhancement beyond legacy — never an oversell guard.** Legacy
+  never showed stock to shoppers; the authoritative all-or-nothing oversell check lives at
+  fulfilment (inventory-service, pessimistic row lock). Two independent, both-degradable
+  mechanisms surface stock: (1) the **item-page badge** — composed server-side in
+  `CatalogController.resolveStock` (coarse: In stock / Only N left / Out of stock), hidden on any
+  failure; (2) the **cart-stepper cap** — the `fragments/stepper.html` JS fetches
+  `GET /api/stock/{itemId}` *after* page load (off the render path, so no browse-time fan-out and
+  no added latency) and disables `+` at the on-hand ceiling on product/item/search pages. Both are
+  **client/UX only** — a raw `POST /cart/set?qty=N` still bypasses the cap. `StockController` is a
+  same-origin proxy (browser is on :8080, inventory-service on :8085 → direct fetch is cross-origin)
+  that forwards to `InventoryClient` and returns `204` when stock is unavailable (stepper stays
+  uncapped). `/api/stock/**` is public (browse data); it exposes exact counts, unlike the coarse badge.
 - `OrderService` hardcodes `locale = Locale.US` (and `currency = USD`) on the intake request
   (legacy quirk) — the UI locale does not flow into the order.
 - **Checkout intake is synchronous** — a slow/down OPC blocks the checkout thread until the SDK's

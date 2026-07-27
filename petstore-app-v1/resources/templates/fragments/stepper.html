@@ -6,17 +6,32 @@
 <span th:fragment="stepper(itemId, qty)" class="stepper" th:attr="data-item=${itemId}">
     <button type="button" onclick="stepCart(this,-1)">&minus;</button>
     <span class="qty" th:text="${qty}">0</span>
-    <button type="button" onclick="stepCart(this,1)">+</button>
+    <button type="button" class="plus" onclick="stepCart(this,1)">+</button>
     <span class="added" style="color:green;display:none">✓ in cart</span>
 </span>
 
 <!-- Shared script (include once per page via th:replace of the 'script' fragment) -->
 <script th:fragment="script">
+// Disable the "+" button when the cart quantity has reached the item's on-hand stock.
+// This is a UX guardrail only: stock is fetched AFTER load (so a slow/down inventory-service
+// never delays the page) via the same-origin /api/stock proxy, and it is inherently stale by
+// click-time — the authoritative oversell guard stays at fulfilment. An item with no known cap
+// (proxy returned 204, or stock not yet loaded) is left uncapped.
+function stepCap(box) {
+    const max = box.getAttribute('data-max');
+    return max == null || max === '' ? Infinity : parseInt(max, 10);
+}
+function refreshPlus(box) {
+    const qty = parseInt(box.querySelector('.qty').textContent || '0', 10);
+    const plus = box.querySelector('.plus');
+    if (plus) plus.disabled = qty >= stepCap(box);
+}
 function stepCart(btn, delta) {
     const box = btn.closest('.stepper');
     const itemId = box.getAttribute('data-item');
     const qtyEl = box.querySelector('.qty');
-    const newQty = Math.max(0, parseInt(qtyEl.textContent || '0', 10) + delta);
+    let newQty = Math.max(0, parseInt(qtyEl.textContent || '0', 10) + delta);
+    newQty = Math.min(newQty, stepCap(box));   // never exceed known on-hand stock
     const body = new URLSearchParams({itemId: itemId, qty: newQty});
     fetch('/cart/set', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body})
         .then(r => r.json())
@@ -26,9 +41,27 @@ function stepCart(btn, delta) {
             if (added) added.style.display = d.qty > 0 ? 'inline' : 'none';
             const badge = document.getElementById('cart-count');
             if (badge) badge.textContent = d.count;
+            refreshPlus(box);
         })
         .catch(e => console.error('cart update failed', e));
 }
+// After load, fetch each stepper's on-hand stock and cap its "+" accordingly. Runs off the
+// render path; a 204 (inventory unavailable/unknown) leaves the stepper uncapped.
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.stepper').forEach(function (box) {
+        const itemId = box.getAttribute('data-item');
+        if (!itemId) return;
+        fetch('/api/stock/' + encodeURIComponent(itemId))
+            .then(r => r.status === 200 ? r.json() : null)
+            .then(d => {
+                if (d && d.quantity != null) {
+                    box.setAttribute('data-max', d.quantity);
+                    refreshPlus(box);
+                }
+            })
+            .catch(e => console.debug('stock lookup failed for', itemId, e));
+    });
+});
 </script>
 </body>
 </html>

@@ -31,7 +31,10 @@ public class SecurityConfig {
     private static final String[] PUBLIC_MATCHERS = {
             "/", "/category", "/product", "/item", "/search",
             "/cart", "/cart/**", "/register-form", "/login",
-            "/orders/**", "/css/**"};
+            "/orders/**", "/css/**",
+            // Same-origin stock proxy for the after-load stepper cap — public browse data
+            // (mirrors /product, /item), degrades to 204 when inventory-service is unavailable.
+            "/api/stock/**"};
     /** ADMIN-only surface (kept for parity with the legacy admin links). */
     private static final String ADMIN_MATCHERS = "/admin/**";
     /** Requires a signed-in customer — both checkout endpoints create orders. */
