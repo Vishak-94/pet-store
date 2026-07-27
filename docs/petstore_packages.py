@@ -48,7 +48,8 @@ node("notify", "notification-service", ":8087")
 node("authsdk", "auth-client", "RS256 verify + login", SDK)
 node("custsdk", "customer-service-client", "customer API + DTOs", SDK)
 node("catsdk", "catalog-service-client", "catalog API + DTOs", SDK)
-node("opcsdk", "order-processing-client", "OPC facade + DTOs", SDK)
+node("opcsdk", "order-processing-client", "OPC facade + intake DTOs", SDK)
+node("invsdk", "inventory-service-client", "stock read + single-flight cache", SDK)
 
 # ── shared libraries (in-process, not a remote API) ─────────────────────
 node("cartlib", "cart-lib", "in-process cart", LIBP)
@@ -63,6 +64,7 @@ publishes("auth", "authsdk")
 publishes("customer", "custsdk")
 publishes("catalog", "catsdk")
 publishes("opc", "opcsdk")
+publishes("inventory", "invsdk")
 
 # ── IMPORTS a client SDK (blue): app → sdk it consumes ──────────────────
 def imports_sdk(app, sdk):
@@ -71,6 +73,8 @@ def imports_sdk(app, sdk):
 imports_sdk("store", "custsdk")
 imports_sdk("store", "catsdk")
 imports_sdk("store", "authsdk")
+imports_sdk("store", "opcsdk")        # storefront → OPC sync checkout intake
+imports_sdk("store", "invsdk")        # storefront → live stock badge / stepper cap
 imports_sdk("customer", "authsdk")
 imports_sdk("admin", "opcsdk")
 imports_sdk("admin", "authsdk")

@@ -340,6 +340,42 @@ bullets(s, Inches(0.5), Inches(1.4), Inches(12.2), Inches(5.5), [
 ])
 
 # ═══════════════════════════════════════════════════════════════════════════
+# SLIDE 9b — Gaps in the current design → alternatives for the JDK 21 / Maven target
+# ═══════════════════════════════════════════════════════════════════════════
+s = slide()
+title_bar(s, "Gaps in the Legacy Design → Java 21 / Maven Alternatives",
+          "What blocks a straight port to Spring Boot 3 on Java 21, and the alternative chosen for each")
+table(s, Inches(0.3), Inches(1.28), Inches(12.75), Inches(5.15), [
+    ["Legacy construct (gap)", "Why it blocks Java 21 / a clean build", "Alternative applied in the migration"],
+    ["J2EE 1.3 EAR + Sun RI app server, JDK 1.4",
+     "No Jakarta EE 10 / Java 21 runtime; not buildable with modern toolchain",
+     "Spring Boot 3.3.5 fat-jars on Java 21 — one runnable jar per service, no app server"],
+    ["Ant build (build.xml) + hand-managed jars",
+     "No dependency resolution, no reproducible builds, no test phase",
+     "Maven per module (parent+client aggregators); ~/.m2 resolution; build-all.sh orders libs→apps"],
+    ["EJB 2.x CMP entity beans (container-generated tables)",
+     "javax.ejb gone; CMP unsupported; synthetic __PMPrimaryKey schema",
+     "Spring Data JPA + Hibernate; POJO/record domain; explicit Flyway/schema.sql"],
+    ["javax.* APIs (servlet, jms, persistence, mail)",
+     "Renamed to jakarta.* in Jakarta EE 9+ — won't compile on Java 21 stack",
+     "Mechanical javax→jakarta namespace migration (automatable; human-reviewed)"],
+    ["Sun-RI JMS + XML-over-JMS (TPA), SOAP web services",
+     "RI JMS not portable; JAX-RPC SOAP removed from JDK",
+     "ActiveMQ Artemis broker (KEEP JMS) + JSON event envelope; SOAP → REST client SDKs"],
+    ["One shared DB, tables duplicated across EARs (no owner)",
+     "Cross-context coupling; can't split or scale a service independently",
+     "DB-per-service; each service owns its schema; stretch: MongoDB for catalog"],
+    ["WAF MVC (MainServlet/*.do) + 98 JSPs, no tests",
+     "Dead framework; behaviour undocumented → high migration risk",
+     "Spring MVC + Thymeleaf; characterization tests pin behaviour BEFORE the rewrite"],
+], col_widths=[Inches(3.5), Inches(4.35), Inches(4.9)], fsize=10.5)
+rect(s, Inches(0.3), Inches(6.55), Inches(12.75), Inches(0.72), LIGHT)
+textbox(s, Inches(0.5), Inches(6.62), Inches(12.4), Inches(0.6),
+        [("Runtime target: latest stable Spring Boot on Java 21 · build: Maven · principle: automate the mechanical "
+          "(namespace/boilerplate), redesign the semantic (persistence, messaging, service boundaries) behind tests.",
+          {"size": 12, "color": NAVY, "bold": True})], anchor=MSO_ANCHOR.MIDDLE)
+
+# ═══════════════════════════════════════════════════════════════════════════
 # SLIDE 10 — Section divider: functional walkthrough
 # ═══════════════════════════════════════════════════════════════════════════
 s = slide()
@@ -960,7 +996,7 @@ table(s, Inches(0.3), Inches(1.28), Inches(12.75), Inches(5.75), [
     ["Target runtime", "Spring Boot · Quarkus", "Spring Boot 3.x / Java 21", "Ecosystem, simple local run, exec JAR"],
     ["Async messaging", "Keep JMS (broker) · in-process events", "Keep JMS (@JmsListener, InvoiceTopic)", "User directive; faithful to distributed design"],
     ["SOAP variant", "Migrate it · drop it", "Drop — JMS build only", "Two builds are duplicates"],
-    ["Database (goal 1)", "H2 · Postgres · MongoDB", "H2 embedded (Mongo = stretch)", "No install; runs on laptop"],
+    ["Database (goal 1)", "H2 · Postgres · MongoDB", "H2 default + MongoDB (stretch DONE)", "H2 = no install; Mongo adapter wired for OPC + catalog"],
     ["Business logic", "Refactor/improve · preserve exactly", "Preserve exactly (char-tests)", "User directive; parity first"],
     ["Design approach", "Ad hoc · SOLID + patterns", "SOLID; ASK before choosing a pattern", "User directive"],
     ["Legacy code", "Edit in place · new project", "New petstore-app-v1/; legacy read-only", "It's a re-platform, not edits"],
@@ -977,7 +1013,7 @@ table(s, Inches(0.3), Inches(1.28), Inches(12.75), Inches(5.75), [
     ["Migration strategy", "Big-bang · Strangler Fig · lift-and-shift", "Strangler Fig, characterization-tests-first"],
     ["Architecture topology", "Modular monolith · microservices", "Modular monolith, ports & adapters"],
     ["Local layout", "Multi-Maven-module · single module + packages", "Single module, strict package boundaries"],
-    ["JMS broker (local)", "Embedded Artemis · external ActiveMQ (Docker)", "Embedded Artemis"],
+    ["JMS broker (local)", "Embedded Artemis · standalone Artemis (Docker)", "Standalone Artemis container (:61616)"],
     ["Order workflow pattern", "GoF State pattern · enum + guarded transitions", "Enum + guarded transitions (right-sized)"],
     ["Web action dispatch", "Explicit Command pattern · thin controllers→services", "Thin controllers → services (idiomatic Spring)"],
     ["Inventory concurrency", "Atomic conditional UPDATE · @Version · pessimistic lock", "Pessimistic lock (SELECT…FOR UPDATE) — user-directed"],
@@ -992,7 +1028,7 @@ table(s, Inches(0.3), Inches(1.28), Inches(12.75), Inches(5.75), [
 # ═══════════════════════════════════════════════════════════════════════════
 s = slide()
 title_bar(s, "Implementation Status — petstore-app-v1",
-          "Spring Boot 3.3 · Java 21 · embedded H2 + Artemis · 43 tests green")
+          "Spring Boot 3.3 · Java 21 · file H2 (+MongoDB stretch) · standalone Artemis · 43 tests green")
 table(s, Inches(0.4), Inches(1.35), Inches(12.5), Inches(3.9), [
     ["Phase", "Delivered", "Verified"],
     ["0 Scaffold", "Boot 3.3/Java 21, H2, embedded Artemis, char-test harness", "boots on Java 21"],
@@ -1008,7 +1044,8 @@ rect(s, Inches(0.4), Inches(5.5), Inches(12.5), Inches(1.4), LIGHT)
 textbox(s, Inches(0.6), Inches(5.6), Inches(12.1), Inches(1.2), [
     ("Two bugs caught by LIVE end-to-end testing (not unit tests): (1) large orders auto-shipped without approval; "
      "(2) approve→fulfil race (published before commit). Both fixed + regression-tested.", {"size": 12, "color": NAVY, "bold": True, "space_after": 4}),
-    ("Ports keep DB (H2→Mongo) and broker (Artemis→Kafka) swaps additive — zero change to domain/services/tests.", {"size": 12, "color": BLUE}),
+    ("Ports proved it: the DB swap (H2→MongoDB) is DONE for OPC + catalog as a profile-selectable adapter — "
+     "zero change to domain/services/tests; a broker swap (Artemis→Kafka) would be equally additive.", {"size": 12, "color": BLUE}),
 ])
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1203,6 +1240,11 @@ def image_slide(title, subtitle, img_name, missing_hint):
         s.shapes.add_picture(path, x, y, width=w, height=h)
     else:
         textbox(s, Inches(0.5), Inches(3), Inches(12), Inches(1), missing_hint, color=RED)
+
+image_slide("Legacy Architecture — Detailed",
+            "Actors · 4 EARs with their endpoints/MDBs/SOAP APIs · all 7 JMS queues + the InvoiceTopic · the DB shown PER EAR (which data each owns) · run: python3 petstore_legacy_highlevel.py",
+            "petstore_legacy_highlevel.png",
+            "petstore_legacy_highlevel.png not found — run petstore_legacy_highlevel.py")
 
 image_slide("Legacy Components & Their Roles (annotated)",
             "J2EE 1.3 · WAF web controller · 4 EARs · 19 reusable components · each box states its role · run: python3 petstore_legacy_components.py",

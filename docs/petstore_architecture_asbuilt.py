@@ -75,7 +75,7 @@ def build_services():
     g.attr(rankdir="TB", splines="spline", nodesep="0.5", ranksep="0.85", bgcolor="white",
            fontname="Helvetica", fontsize="16", labelloc="t", pad="0.3",
            label="Java Pet Store — As-Built Service Map (Spring Boot 3.3.5 / Java 21)\\l"
-                 "Service[client SDKs imported]  ·  DB: SQL (file H2) or none  ·  "
+                 "Service[client SDKs imported]  ·  DB: file H2 (opc/catalog also MongoDB-capable) or none  ·  "
                  "solid blue = HTTP/REST call  ·  dashed red = JMS\\l")
     g.attr("node", fontname="Helvetica")
     g.attr("edge", fontname="Helvetica")
@@ -86,17 +86,19 @@ def build_services():
 
     # edge-facing tier
     _svc_node(g, "store", "petstore-app-v1 (Storefront)", 8080,
-              ["auth", "catalog", "customer"], "none (publish-only)", "embeds cart-lib · uses petstore-messaging")
+              ["auth", "catalog", "customer", "opc", "inventory"], "none (broker client)",
+              "embeds cart-lib · sync REST checkout intake → opc · live stock badge")
     _svc_node(g, "admin", "admin-office-service", 8082,
               ["auth", "opc"], "none (delegates)", "back-office ADMIN console")
     _svc_node(g, "inv", "inventory-service", 8085,
-              ["auth"], "SQL (h2 inventory)", "uses petstore-messaging · stock + dedup ledger")
+              ["auth"], "SQL (h2 inventory)",
+              "publishes inventory-service-client · stock + dedup ledger")
 
     # backing services
     _svc_node(g, "auth", "auth-service (IdP)", 8086, [], "SQL (h2 auth)", "mints RS256 JWT (private key)")
-    _svc_node(g, "catalog", "catalog-service", 8083, [], "SQL (h2 catalog)", "read-only · locale-split")
+    _svc_node(g, "catalog", "catalog-service", 8083, [], "SQL (h2) or MongoDB", "read-only · locale-split")
     _svc_node(g, "customer", "customer-service", 8081, ["auth"], "SQL (h2 customer)", "PII / profile / card")
-    _svc_node(g, "opc", "order-processing (OPC)", 8088, ["auth"], "SQL (h2 opc)",
+    _svc_node(g, "opc", "order-processing (OPC)", 8088, ["auth"], "SQL (h2) or MongoDB",
               "authoritative order store + outbox · uses petstore-messaging")
     _svc_node(g, "notif", "notification-service", 8087, [], "none (stateless observer)", "uses petstore-messaging")
 
@@ -119,6 +121,8 @@ def build_services():
     g.edge("store", "auth",     label="login")
     g.edge("store", "catalog",  label="browse")
     g.edge("store", "customer", label="profile")
+    g.edge("store", "opc",      label="checkout intake")
+    g.edge("store", "inv",      label="stock badge", constraint="false")
     g.edge("customer", "auth",  label="provision")
     g.edge("admin", "opc",      label="orders / approve / sales")
     g.edge("admin", "auth",     label="login", constraint="false")
@@ -127,10 +131,12 @@ def build_services():
 
     # databases (one per stateful service)
     g.attr("edge", color=C_DB[1], penwidth="1.2", fontsize="8", fontcolor=C_DB[1], style="solid")
-    for svc, dbid, lbl in [("auth", "db_auth", "auth"), ("catalog", "db_cat", "catalog"),
-                           ("customer", "db_cust", "customer"), ("opc", "db_opc", "opc"),
-                           ("inv", "db_inv", "inventory")]:
-        _db_node(g, dbid, f"{lbl} db\\n(file H2)")
+    for svc, dbid, lbl, store in [("auth", "db_auth", "auth", "file H2"),
+                                  ("catalog", "db_cat", "catalog", "H2 / MongoDB"),
+                                  ("customer", "db_cust", "customer", "file H2"),
+                                  ("opc", "db_opc", "opc", "H2 / MongoDB"),
+                                  ("inv", "db_inv", "inventory", "file H2")]:
+        _db_node(g, dbid, f"{lbl} db\\n({store})")
         g.edge(svc, dbid)
 
     out = os.path.join(BASE, "petstore_asbuilt_services")
@@ -149,7 +155,8 @@ def build_jms():
            fontname="Helvetica", fontsize="16", labelloc="t", pad="0.3",
            label="Java Pet Store — JMS Topology (one ActiveMQ Artemis broker, :61616)\\l"
                  "▣ queue = point-to-point (one consumer)   ◈ topic = pub/sub (fan-out)   "
-                 "retry ~1s→~2s→3rd fail ⇒ DLQ\\l")
+                 "retry ~1s→~2s→3rd fail ⇒ DLQ\\l"
+                 "checkout intake is now synchronous REST → opc (PurchaseOrderQueue kept as alt path)\\l")
     g.attr("node", fontname="Helvetica")
     g.attr("edge", fontname="Helvetica")
 
@@ -171,9 +178,8 @@ def build_jms():
                     f'</TABLE>>', shape="plaintext")
 
     # producers (left)
-    producer("p_store", "petstore-app-v1\\nOrderService.checkout", "store")
     producer("p_opc",   "order-processing\\nOutboxRelay", "opc")
-    producer("p_inv",   "inventory-service\\nOrderApprovedListener", "inv")
+    producer("p_inv",   "inventory-service\\nOrderApproved + Restock", "inv")
     producer("brk",     "broker\\n(after 3 failed deliveries)", "admin")
 
     # destinations (center)
@@ -181,6 +187,7 @@ def build_jms():
     dest("q_ao",   "ApprovedOrderQueue", "queue")
     dest("t_inv",  "InvoiceTopic", "topic")
     dest("t_os",   "OrderStatusTopic", "topic")
+    dest("t_rs",   "RestockTopic", "topic")
     dest("dlq",    "DLQ", "safety")
     dest("exp",    "ExpiryQueue", "safety")
 
@@ -188,26 +195,27 @@ def build_jms():
     def consumer(nid, label, col):
         g.node(nid, label, shape="box", style="filled,rounded", fillcolor=C[col][0],
                color=C[col][1], fontsize="11", fontcolor=NAVY)
-    consumer("c_opc",   "order-processing\\nOrderListener / InvoiceListener", "opc")
+    consumer("c_opc",   "order-processing\\nOrder/Invoice/Restock listeners", "opc")
     consumer("c_inv",   "inventory-service\\nOrderApprovedListener", "inv")
     consumer("c_notif", "notification-service\\nInvoice/Status/Dlq listeners", "notif")
 
     # produce edges (solid) → destination
     g.attr("edge", color=NAVY, penwidth="1.5", fontsize="9", fontcolor=GREY, style="solid", arrowhead="normal")
-    g.edge("p_store", "q_po", label="PurchaseOrderEvent")
     g.edge("p_opc",   "q_ao", label="OrderApprovedEvent")
     g.edge("p_opc",   "t_os", label="OrderStatusEvent")
     g.edge("p_inv",   "t_inv", label="InvoiceEvent")
+    g.edge("p_inv",   "t_rs",  label="RestockEvent")
     g.edge("brk",     "dlq", label="quarantine", color=RED, fontcolor=RED)
     g.edge("brk",     "exp", label="expired", color=RED, fontcolor=RED)
 
     # destination → consumer (dashed red = JMS delivery)
     g.attr("edge", color=RED, penwidth="1.8", fontsize="9", fontcolor=RED, style="dashed", arrowhead="vee")
-    g.edge("q_po",  "c_opc")
+    g.edge("q_po",  "c_opc",   label="(alt intake)")
     g.edge("q_ao",  "c_inv")
     g.edge("t_inv", "c_opc",   label="→ COMPLETED")
     g.edge("t_inv", "c_notif", label="→ email")   # topic fan-out: two consumers
     g.edge("t_os",  "c_notif", label="→ email")
+    g.edge("t_rs",  "c_opc",   label="→ re-drive backorders")
     g.edge("dlq",   "c_notif", label="ERROR log")
     g.edge("exp",   "c_notif", label="ERROR log")
 
@@ -273,11 +281,11 @@ def add_slides(services_png, jms_png):
 
     picture_slide(
         "As-Built Architecture — Service Map",
-        "8 Spring Boot services · Service[imported client SDKs] · DB: SQL (file H2) or none · HTTP=solid, JMS=async",
+        "8 Spring Boot services · Service[imported client SDKs] · DB: file H2 (opc/catalog also MongoDB-capable) or none · HTTP=solid, JMS=async",
         services_png)
     picture_slide(
         "As-Built Architecture — JMS Topology",
-        "One ActiveMQ Artemis broker · 2 queues + 2 topics + 2 safety nets · producers → destinations → consumers",
+        "One ActiveMQ Artemis broker · 2 queues + 3 topics + 2 safety nets · producers → destinations → consumers",
         jms_png)
 
     prs.save(pptx_path)
