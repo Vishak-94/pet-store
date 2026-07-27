@@ -1,0 +1,8 @@
+# Dev-only overrides. Activate with: --spring.profiles.active=dev (or SPRING_PROFILES_ACTIVE=dev).
+# Turns up Spring Security logging so access-denied / CSRF failures (which produce NO output at
+# INFO and just redirect to /warehouse/login?forbidden) become visible while debugging the local
+# multi-console demo. Local only — never enable this verbosity in a shared/prod environment.
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.springframework.security.web.csrf: TRACE

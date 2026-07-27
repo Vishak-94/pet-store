@@ -2,9 +2,9 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head><meta charset="UTF-8"/><title>Inventory — Supplier</title></head>
 <body>
-<!-- CSRF: every POST form below uses th:action, so Spring Security's CsrfRequestDataValueProcessor
-     auto-injects the hidden _csrf token (CSRF is enabled for UI routes in SecurityConfig). Do NOT
-     change th:action to a plain action= — that would silently drop the token and 403 the submit. -->
+<!-- CSRF is DISABLED for this console in SecurityConfig (local demo — see the security NOTE there).
+     Forms still use th:action; if CSRF is re-enabled the CsrfRequestDataValueProcessor will inject
+     the hidden _csrf token automatically, so keep th:action (not a plain action=). -->
 <div style="background:#eee;padding:8px;border-bottom:2px solid #C97C2F">
     <b>Inventory — Supplier (Receiver)</b>
     <span style="float:right">

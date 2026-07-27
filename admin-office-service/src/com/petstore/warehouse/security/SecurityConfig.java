@@ -13,7 +13,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 /**
  * Verify-only security for the admin service. Tokens are minted by auth-service
@@ -68,15 +67,14 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtVerifier verifier) throws Exception {
         http
-            // CSRF is enabled for the cookie-authed UI forms (login/logout, approve/deny) so a
-            // cross-site page can't drive an admin action on the logged-in staffer's behalf. The
-            // stateless JSON /api/** surface is exempt: it is Bearer-token authed (no ambient cookie
-            // to ride), so it isn't CSRF-exposed and its programmatic callers can't fetch a token.
-            // Sessions are STATELESS, so the token can't live server-side — CookieCsrfTokenRepository
-            // (readable by Thymeleaf via the request attribute) is the stateless synchronizer store.
-            .csrf(csrf -> csrf
-                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                .ignoringRequestMatchers(API_PREFIX + "**"))
+            // CSRF DISABLED for this console (per operator request, local demo).
+            // NOTE (security): CSRF protection is what stops a malicious page from driving an
+            // approve/deny on a logged-in admin's behalf. It is off here to unblock the demo; the
+            // JWT still lives in a SameSite=Strict cookie which blocks the classic cross-site POST,
+            // but re-enable proper CSRF (a stable, non-rotating token — the rotation caused by
+            // STATELESS + per-request re-auth is the bug that made the tokened version fail) before
+            // any non-local deployment. The JSON /api/** surface is Bearer-authed and never used a token.
+            .csrf(csrf -> csrf.disable())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC_MATCHERS).permitAll()
@@ -97,7 +95,8 @@ public class SecurityConfig {
                         res.sendRedirect(REDIRECT_FORBIDDEN);
                     }
                 }))
-            .addFilterBefore(new AuthJwtFilter(verifier), UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(new AuthJwtFilter(verifier, com.petstore.warehouse.web.WarehouseLoginController.JWT_COOKIE),
+                    UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

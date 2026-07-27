@@ -7,3 +7,10 @@ spring:
   h2:
     console:
       enabled: true
+# Turn up Spring Security logging so access-denied / CSRF failures (which produce NO output at
+# INFO and just redirect to /inventory/login?forbidden — "That account is not a supplier") become
+# visible while debugging the local multi-console demo. Local only.
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.springframework.security.web.csrf: TRACE

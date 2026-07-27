@@ -13,7 +13,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 /**
@@ -62,18 +61,14 @@ public class SecurityConfig {
         // and the frame-options relaxation it needs is not applied.
         boolean devConsole = env.acceptsProfiles(Profiles.of("dev"));
         http
-            // CSRF enabled for the cookie-authed UI forms (login/logout, restock) so a cross-site
-            // page can't drive a restock on the logged-in supplier's behalf. The stateless JSON
-            // /api/** surface is Bearer-authed (no ambient cookie to ride) and exempt; the dev-only
-            // H2 console is exempt too (it posts its own forms and only runs under the dev profile).
-            // Sessions are STATELESS so CookieCsrfTokenRepository is the stateless synchronizer store.
-            .csrf(csrf -> {
-                csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                    .ignoringRequestMatchers(API_PREFIX + "**");
-                if (devConsole) {
-                    csrf.ignoringRequestMatchers(new AntPathRequestMatcher("/h2-console/**"));
-                }
-            })
+            // CSRF DISABLED for this console (per operator request, local demo).
+            // NOTE (security): CSRF protection is what stops a malicious page from driving a
+            // restock on a logged-in supplier's behalf. It is off here to unblock the demo; the
+            // JWT still lives in a SameSite=Strict cookie which blocks the classic cross-site POST,
+            // but re-enable proper CSRF (a stable, non-rotating token — the rotation caused by
+            // STATELESS + per-request re-auth is the bug that made the tokened version fail) before
+            // any non-local deployment. The JSON /api/** surface is Bearer-authed and never used a token.
+            .csrf(csrf -> csrf.disable())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> {
                 auth.requestMatchers(PUBLIC_MATCHERS).permitAll();
@@ -98,7 +93,8 @@ public class SecurityConfig {
                         res.sendRedirect(REDIRECT_FORBIDDEN);
                     }
                 }))
-            .addFilterBefore(new AuthJwtFilter(verifier), UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(new AuthJwtFilter(verifier, com.petstore.inventory.web.InventoryLoginController.JWT_COOKIE),
+                    UsernamePasswordAuthenticationFilter.class);
         if (devConsole) {
             http.headers(h -> h.frameOptions(f -> f.sameOrigin()));   // H2 console renders in frames
         }

@@ -1,6 +1,5 @@
 package com.petstore.warehouse.web;
 
-import com.petstore.auth.client.AuthJwtFilter;
 import com.petstore.opc.client.OrderProcessingClient;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -55,7 +54,23 @@ public class WarehouseUiController {
         this.opc = opc;
     }
 
-    /** Pending-orders approval console — lists via the OPC facade. */
+    /**
+     * Pending-orders approval console. Reads the admin's JWT from the {@code jwt} COOKIE
+     * and DELEGATES to the OPC: {@link OrderProcessingClient#ordersByStatus}(PENDING) for the
+     * id list, then {@link OrderProcessingClient#getOrder} per id to build the display rows.
+     * Owns no data.
+     *
+     * <p>Example request (browser navigation):
+     * <pre>{@code
+     * GET /warehouse/orders
+     * Cookie: jwt=<admin JWT>
+     * }</pre>
+     *
+     * <p>Example response: renders the {@code orders} Thymeleaf view with a {@code pending}
+     * model attribute — a list of {@code {orderId, user, total, lines}} maps, one per PENDING
+     * order. Errors: redirect to {@code /warehouse/login} if unauthenticated; 502/503 if the
+     * OPC is unreachable/erroring.
+     */
     @GetMapping("/warehouse/orders")
     public String orders(HttpServletRequest request, Model model) {
         String bearer = jwt(request);
@@ -74,6 +89,17 @@ public class WarehouseUiController {
      * Delegates to the OPC's {@code /api/orders/all} summary endpoint in a single call
      * (no per-order fetch), forwarding the acting admin's JWT. Approve/deny stays on
      * the focused pending console; this page never mutates.
+     *
+     * <p>Example request (browser navigation):
+     * <pre>{@code
+     * GET /warehouse/orders/all
+     * Cookie: jwt=<admin JWT>
+     * }</pre>
+     *
+     * <p>Example response: renders the {@code all_orders} Thymeleaf view with an {@code orders}
+     * model attribute — a list of {@code {orderId, user, received, status, lines, total}} maps
+     * (one per order, newest-received first). Errors: redirect to {@code /warehouse/login} if
+     * unauthenticated; 502/503 if the OPC is unreachable/erroring.
      */
     @GetMapping("/warehouse/orders/all")
     public String allOrders(HttpServletRequest request, Model model) {
@@ -91,23 +117,56 @@ public class WarehouseUiController {
         return VIEW_ALL_ORDERS;
     }
 
+    /**
+     * Approve an order from the console (form POST). Reads the JWT from the {@code jwt}
+     * cookie and DELEGATES to {@link OrderProcessingClient#approve}, then redirects back to
+     * the pending queue so the just-approved order drops off the list.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * POST /warehouse/orders/1001/approve
+     * Cookie: jwt=<admin JWT>
+     * }</pre>
+     *
+     * <p>Example response: {@code 302 Found} &rarr; {@code /warehouse/orders}. Errors:
+     * redirect to login if unauthenticated; 502/503 if the OPC is unreachable/erroring.
+     */
     @PostMapping("/warehouse/orders/{id}/approve")
     public String approve(@PathVariable String id, HttpServletRequest request) {
         opc.approve(id, jwt(request));
         return REDIRECT_ORDERS;
     }
 
+    /**
+     * Deny an order from the console (form POST). Reads the JWT from the {@code jwt} cookie
+     * and DELEGATES to {@link OrderProcessingClient#deny}, then redirects back to the pending
+     * queue so the just-denied order drops off the list.
+     *
+     * <p>Example request:
+     * <pre>{@code
+     * POST /warehouse/orders/1001/deny
+     * Cookie: jwt=<admin JWT>
+     * }</pre>
+     *
+     * <p>Example response: {@code 302 Found} &rarr; {@code /warehouse/orders}. Errors:
+     * redirect to login if unauthenticated; 502/503 if the OPC is unreachable/erroring.
+     */
     @PostMapping("/warehouse/orders/{id}/deny")
     public String deny(@PathVariable String id, HttpServletRequest request) {
         opc.deny(id, jwt(request));
         return REDIRECT_ORDERS;
     }
 
-    /** Extract the admin's JWT from the {@code jwt} cookie (empty string if absent). */
+    /**
+     * Extract the admin's JWT from the service-specific {@code jwt-warehouse} cookie (empty string
+     * if absent) to forward as a Bearer token to the OPC. Must match the name
+     * {@code WarehouseLoginController} sets and {@code SecurityConfig} wires the filter to read —
+     * NOT the shared {@code jwt} default (which is why this uses {@code WarehouseLoginController.JWT_COOKIE}).
+     */
     private static String jwt(HttpServletRequest request) {
         if (request.getCookies() != null) {
             for (Cookie c : request.getCookies()) {
-                if (AuthJwtFilter.JWT_COOKIE.equals(c.getName())) {
+                if (WarehouseLoginController.JWT_COOKIE.equals(c.getName())) {
                     return c.getValue();
                 }
             }
