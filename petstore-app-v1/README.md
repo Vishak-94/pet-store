@@ -1,137 +1,131 @@
-# Java Pet Store — storefront (`petstore-app-v1`)
+# petstore-app-v1 — :8080 shopper-facing storefront (browse → cart → checkout)
 
-The **:8080 storefront** of the migrated Java Pet Store. It serves the HTML shopping UI
-(browse → cart → checkout, sign-on, registration, account self-service), hosts the
-**embedded ActiveMQ Artemis broker** the whole fleet shares, and embeds the in-process
-**cart-lib**. Spring Boot 3.3.5 on Java 21, package root `com.petstore`.
+> Part of the Java Pet Store → Spring Boot 3.3.5 / Java 21 migration. See the [repo README](../README.md).
 
-This is one module of a **multi-service system**, not a standalone monolith. It is
-**publish-only for orders**: checkout publishes a `PurchaseOrderEvent` to the JMS
-`PurchaseOrderQueue` and does not persist orders. The authoritative order store + workflow,
-admin console, catalog, customer, auth, inventory and notification concerns each live in
-their own service. See the repo root [`README.md`](../README.md) for the full topology and
-[`../DECISIONS.md`](../DECISIONS.md) for the rationale.
+**Port:** `8080` · **Package:** `com.petstore` · **Legacy origin:** petstore.ear
 
-> For a developer/agent guide to this module see [`CLAUDE.md`](CLAUDE.md); for the class +
-> sequence design see [`docs/LLD.md`](docs/LLD.md).
+## What it does
 
----
+The HTML storefront of the migrated Pet Store. It serves the shopping UI — catalog
+browse (categories → products → items) and search, the shopping cart, sign-on,
+registration, account self-service, and checkout. It embeds the in-process **cart-lib**
+and is a plain **client** of every other concern:
 
-## Prerequisites
+- It persists **nothing** — no database, no JPA, no order table. Checkout hands the
+  order to order-processing-service (OPC), the authoritative order store.
+- It is a broker **client**, not the broker host. The ActiveMQ Artemis broker now runs
+  as a **standalone container** (repo `docker-compose.yml`); this app connects to it
+  (`mode: native`, `embedded.enabled=false`) but no longer publishes on the checkout path.
+- Order status, admin approval, catalog, customer, auth, inventory, and notification each
+  live in their own service — there are intentionally **no** order-status or `/admin/**`
+  capabilities here.
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| JDK | **21** (LTS) | Tested on Amazon Corretto 21. `java -version` must report 21. |
-| Maven | 3.9+ | Or your IDE's bundled Maven. |
+## Layout
 
-The shared libs (`petstore-messaging`, `cart-lib`, and the `*-client` SDKs) must be in
-`~/.m2` first — the repo `../build-all.sh` installs them. The JMS broker is embedded
-(Artemis, in-process); there is **no database in this module** (it persists nothing).
+Non-standard Maven layout (declared in `pom.xml`): main under `src/`, tests under `test/`,
+resources under `resources/`. Package-per-context under `src/com/petstore/`:
 
-## Build and run
+| Package | Holds |
+|---------|-------|
+| _(root)_ | `PetStoreApplication` (`@SpringBootApplication @EnableJms @ConfigurationPropertiesScan`) |
+| `catalog/` | `CatalogController`; framework-free view models `Category`/`Product`/`Item`; `CatalogViewMapper` (SDK DTO → view model) |
+| `cart/` | `CartController`, `CartIdFilter`; `CartService` (adapter over cart-lib); `CartConfig`; `CartItem` |
+| `order/` | `CheckoutController` (JSON) + `PreCheckoutController`; `StorefrontController`'s HTML checkout; `OrderService`, `OrderIdGenerator`, `IdempotencyKeyStore`, `OrderKeyCipher`; `CheckoutForm`/`ContactInfoForm`; `EmptyCartException`, `MissingFormDataException`, `OrderIntakeUnavailableException` |
+| `inventory/web` | `StockController` — same-origin proxy `GET /api/stock/{itemId}` for the after-load stepper cap |
+| `customer/web` | `CustomerController` — account self-service |
+| `security` | `SecurityConfig`, `CustomerServiceAuthProvider`, `LoginController`, `SignOnLocaleSuccessHandler`, `AuthenticatedUser` |
+| `config` | `WebConfig` (i18n), `HttpClientConfig` + `ResilientRestClient` (SDK beans), `ServiceEndpoints` (`@ConfigurationProperties`) |
+| `web` | `StorefrontController`, `RegistrationController`, `GlobalModelAdvice` (`cartCount`), `CorrelationIdFilter`, `RestExceptionHandler`, `HtmlExceptionHandler` |
+
+`resources/`: `application.yml`, `messages.properties` + `_en`/`_ja`/`_zh`, Thymeleaf
+`templates/*.html` (incl. `fragments/nav.html`, `fragments/stepper.html`). Three locales
+only: `en_US`, `ja_JP`, `zh_CN`.
+
+## Build & run
 
 ```bash
-# from the petstore-app-v1/ directory
-export JAVA_HOME=$(/usr/libexec/java_home -v 21)   # macOS; ensure Java 21 is active
-
-mvn clean package         # compile + run this module's tests
-mvn spring-boot:run       # start on :8080 (also opens the shared broker on :61616)
-#   ...or run the jar:
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"   # Java 21 required
+cd petstore-app-v1
+mvn -q clean package          # compile + run this module's tests
+mvn -q test                   # tests only
+mvn spring-boot:run           # run on :8080
 java -jar target/petstore-app-v1-1.0.0.jar
 ```
 
-Start this app **first** (it hosts the broker), or use the repo `../run-all.sh` which
-orders the fleet correctly. For the UI to fully work the downstream services should be up:
-catalog (:8083), customer (:8081), auth (:8086), and — for orders to actually be processed —
-order-processing (:8088) + inventory (:8085) + notification (:8087).
+The shared libs (`petstore-messaging`, `cart-lib`, and the `*-client` SDKs) must be in
+`~/.m2` first — use the repo `../build-all.sh`. At runtime the broker container must be up
+(start it first; `../run-all.sh` orders the fleet correctly), and for the UI to fully work
+the downstream services should be running: catalog (:8083), customer (:8081), auth (:8086),
+inventory (:8085), and order-processing (:8088) for checkout. `mvn test` needs no running
+broker — `test/resources/application.yml` overrides Artemis back to an in-VM embedded broker.
 
-> Note: this project uses a **non-standard source layout** — main code under `src/`, tests
-> under `test/`, resources under `resources/` — configured in the `pom.xml`.
+## Client SDKs imported
 
-## Using the application
+| SDK / lib | Used by | For |
+|-----------|---------|-----|
+| `auth-client` (`AuthClient`) | `CustomerServiceAuthProvider` | Form-login → auth-service (:8086); returns JWT + userId + roles |
+| `customer-service-client` (`CustomerServiceClient`) | `StorefrontController`, `CustomerController`, `SignOnLocaleSuccessHandler` | Register; read/update account/profile/card (:8081), Bearer = session JWT |
+| `catalog-service-client` (`CatalogServiceClient`) | `CatalogController`, cart-lib | Browse/search + item price resolution (:8083) |
+| `inventory-service-client` (`InventoryClient`) | `StockController`, `CatalogController.resolveStock` | Public per-item availability (:8085) for the display-only stock badge / stepper cap; carries the in-process `SingleFlightStockCache` (TTL) |
+| `order-processing-client` (`OrderProcessingClient`) | `OrderService` | Synchronous checkout intake — `POST /api/orders/intake` (:8088), Bearer = shopper JWT |
+| `cart-lib` (`CartOperations`/`CartStore`) | `CartService` | **In-process** cart + 15-min sliding TTL |
+| `petstore-messaging` (`Events`, `Correlation`) | `CorrelationIdFilter` | Correlation-id bridge (no longer used to publish on checkout) |
 
-- **Browse the store:** open <http://localhost:8080/> — categories → products → items, plus search.
-- **Register / sign on:** create an account and log in; a returning user's stored
-  `preferredLanguage` is applied to the session locale on sign-on (unless `?lang=` overrides it).
-- **Place an order:** add items to the cart, then check out. Checkout collects and validates
-  ship-to and bill-to addresses and publishes the order to JMS. Approval/fulfilment happen
-  asynchronously in the order-processing and inventory services; order **status and admin
-  approval live in those services**, not here (order-processing-service on :8088, admin console
-  on :8082).
+Auth is fully **delegated**: this module holds no local credentials and no
+`UserDetailsService`. The RS256 JWT lives as the `Authentication` credential and is forwarded
+as a Bearer token to downstream services; the stable customer `userId` sits on
+`Authentication.getDetails()`, distinct from the username.
 
-## Endpoints (this module)
+## Checkout flow
 
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| GET | `/` | public | Home — category list |
-| GET | `/category?id=` | public | Products in a category |
-| GET | `/product?id=` | public | Items of a product |
-| GET | `/item?id=` | public | Item detail |
-| GET | `/search?keyword=` | public | Search items |
-| GET/POST | `/cart`, `/cart/add`, `/cart/update`, `/cart/delete` | public | Shopping cart (cart-id cookie) |
-| GET | `/register-form` · POST `/register` | public | Registration (returns to originating screen) |
-| GET | `/login` · `/logout` | public | Form login (delegated to auth-service) / sign-off |
-| GET/POST | `/checkout` | **authenticated** | HTML checkout — collect/validate ship+bill address, publish PO |
-| POST | `/api/checkout?userId=&email=` | **authenticated** | JSON checkout — publish PO |
-| GET/POST | `/customer` | **authenticated** | Account self-service (update account/profile/card) |
+Checkout is a **synchronous REST intake to OPC**, not a fire-and-forget JMS publish.
+`OrderService.checkout` builds a `CheckoutRequest` from the cart (server-minted order id,
+computed total, ship-to/bill-to contacts), calls `orderProcessingClient.checkout(request, jwt)`
+— a `POST /api/orders/intake` to order-processing-service — proxying the shopper's JWT so OPC
+can authorize the intake for the customer role, then empties the cart **only on success**. If
+OPC is unreachable the call throws `OrderIntakeUnavailableException` → clean 503 / retry notice
+and the cart is left intact.
 
-There are intentionally **no** order-status or `/admin/**` endpoints in this module — those
-capabilities are owned by order-processing-service and admin-office-service respectively.
+Duplicate submits are guarded by an **idempotency key**. The checkout page calls
+`POST /pre-checkout`, which reserves a fresh server-minted order id per signed-in customer in
+the in-memory `IdempotencyKeyStore` and returns it **encrypted** (AES-256/GCM via
+`OrderKeyCipher`). The UI parks the ciphertext in the form's hidden `orderKey` field and echoes
+it back on submit, where it is decrypted and consumed exactly once — a refresh / double-click
+carries the same id, finds the reservation gone, and is rejected. OPC's `order_id` primary key
+is the correctness backstop behind this.
 
-## Architecture (this module's place in the system)
+Two checkout endpoints exist, both `authenticated()` and both CSRF-exempt: `POST /checkout`
+(HTML, `StorefrontController`, identity from `Authentication`) and `POST /api/checkout`
+(JSON, `CheckoutController`, takes `userId`/`email` params). `OrderService` hardcodes
+`locale = en_US` / `currency = USD` on the intake request (a documented legacy quirk).
 
-Hexagonal (ports & adapters), package-per-context under `com.petstore`
-(`catalog`, `cart`, `order`, `customer`, `security`, `web`, `config`):
+Live stock is a **display/UX enhancement only, never an oversell guard** (the authoritative
+check is at fulfilment in inventory-service): a coarse item-page badge composed in
+`CatalogController.resolveStock`, plus a cart-stepper cap that fetches `GET /api/stock/{itemId}`
+after page load. Both degrade silently when inventory-service is unavailable.
 
-- **Domain** — framework-free view models (no Spring/JPA/JMS annotations).
-- **Messaging adapter** — `OrderService` builds a `PurchaseOrderEvent` and publishes it via
-  `MessagePublisher` (from `petstore-messaging`) to `Destinations.PURCHASE_ORDER`. No inbound
-  JMS listeners live here — this module is a pure producer + broker host.
-- **Client SDKs** — auth (login), customer (register/read/update), catalog (browse/search/price),
-  all called with the session JWT as a Bearer token. Auth is fully delegated; this module holds
-  no credentials.
-- **Cart** — session-local via a `cartId` cookie (`CartIdFilter`), delegating to the in-process
-  `cart-lib` (15-min sliding TTL = legacy session timeout).
+## Auth / security
 
-The order workflow enum (`PENDING → APPROVED/DENIED → COMPLETED`) and its persistence live in
-order-processing-service, not here.
+Form login is delegated to auth-service via `CustomerServiceAuthProvider`; the resulting
+Spring session is tracked by the servlet **`JSESSIONID`** cookie (cleared on `/logout`), and
+carries the JWT as the `Authentication` credential — `ProviderManager` credential-erasure is
+disabled so the JWT survives to be forwarded downstream as a Bearer token. There is no separate
+JWT cookie. The cart is session-local via a dedicated `cartId` cookie minted by `CartIdFilter`
+(HttpOnly, 128-bit SecureRandom), independent of login so logged-out shoppers keep a cart.
 
-## How it maps to the legacy app
+Access rules (`SecurityConfig`): public browse/cart/register/login/`/api/stock/**`;
+`/admin/**` needs ADMIN (kept for legacy parity); `/checkout`, `/api/checkout`, `/pre-checkout`,
+`/customer` require authentication. **CSRF is disabled** for `/checkout`, `/api/checkout`,
+`/pre-checkout`, `/cart/**`, `/admin/**` (form/AJAX posts). Sign-on locale precedence: an
+explicit `?lang=` wins over the customer's stored `preferredLanguage` (`SignOnLocaleSuccessHandler`).
 
-| Legacy (J2EE 1.3) | Migrated (this storefront) |
-|---|---|
-| WAF MainServlet + EJBAction dispatch | Spring MVC `@Controller` |
-| Stateful cart session bean | cart-id cookie + in-process `cart-lib` |
-| JSP + WAF templates | Thymeleaf templates (`resources/templates/`) |
-| ServiceLocator (JNDI) | Spring dependency injection (deleted) |
-| Checkout → OPC via JMS | Checkout → `PurchaseOrderQueue` via `MessagePublisher` (kept) |
-| Sign-on locale from profile | `SignOnLocaleSuccessHandler` applies `preferredLanguage` |
+## See also
 
-(The persistence, fulfilment, and admin mappings live in the corresponding services — see the
-repo root README and `../docs/PARITY_AUDIT.md`.)
-
-## Testing
-
-```bash
-mvn test        # unit + slice + characterization tests for this module
-```
-
-Key tests (`test/com/petstore/`): `order/OrderCharacterizationTest` (checkout publishes the PO,
-computes the total, empties the cart — no persistence), `order/CheckoutAddressTest` (H7
-ship/bill required-field validation), `cart/CartServiceAdapterTest`, and `security/SecurityTest`.
-
-## Project layout
-
-```
-petstore-app-v1/
-├── pom.xml
-├── src/          main Java (com/petstore/<context>/{domain,service,web,messaging,config})
-├── test/         characterization + slice tests
-├── resources/    application.yml, messages*.properties, templates/
-├── docs/         LLD.md (class + sequence design)
-├── CLAUDE.md     module guide for Claude Code sessions
-└── target/
-```
+- [`CLAUDE.md`](CLAUDE.md) — developer/agent guide for this module (authoritative)
+- [`docs/LLD.md`](docs/LLD.md) — class + sequence diagrams
+- [`../README.md`](../README.md) — full system topology
+- [`../DECISIONS.md`](../DECISIONS.md) — ADRs (e.g. broker externalization, JMS→REST intake)
+- [`../docs/PARITY_AUDIT.md`](../docs/PARITY_AUDIT.md) — legacy-vs-migrated parity baseline
 
 ## Acknowledgements
 Migrated from the Sun Java Pet Store 1.3.1_02 BluePrints sample (Apache 2.0).
