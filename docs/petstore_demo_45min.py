@@ -1495,6 +1495,36 @@ textbox(s, Inches(0.7), Inches(4.3), Inches(12.0), Inches(2.5), [
      "decisions, not accidents.", {"size": 13, "color": GREY}),
 ], anchor=MSO_ANCHOR.TOP)
 
+# ── why "DROPPED" — the rationale behind each deliberate deletion ─────────────
+s = slide()
+title_bar(s, "Why these are dropped, not lost", "“DROPPED” = the platform now provides it, so hand-rolled code is deleted", tag="rationale")
+drop_rows = [
+    ["Legacy piece", "Why it existed (J2EE 1.3)", "Why dropped in the migration"],
+    ["servicelocator",
+     "Cached JNDI lookups of EJB homes, JMS factories & DataSources — J2EE had no DI.",
+     "Spring does dependency injection natively; wiring is declarative. A JNDI locator is pure boilerplate now."],
+    ["util (Debug)",
+     "Home-grown static tracer gated by a compile-time flag — no logging standard existed.",
+     "SLF4J + Logback give levels, config & routing. Keeping a bespoke tracer would be strictly worse."],
+    ["encodingfilter",
+     "Servlet Filter forcing request charset because containers defaulted to ASCII/Latin-1.",
+     "Spring Boot auto-configures CharacterEncodingFilter at UTF-8. Re-adding it would duplicate the framework."],
+    ["WAF + JSP\n(MainServlet, ScreenFlow,\nHTMLAction/Event, template.jsp)",
+     "A hand-built MVC framework: front controller, XML screen-flow, command objects, JSP templating.",
+     "Spring MVC + Thymeleaf + @ControllerAdvice ARE that framework, battle-tested. The command indirection adds no value."],
+    ["admin Swing / Java Web Start client",
+     "A desktop rich client (charts, tables) launched over JWS to talk to the server via XML-over-HTTP.",
+     "JWS is dead on modern JVMs and browsers; a Thymeleaf web UI replaces it and needs no install."],
+]
+table(s, Inches(0.3), Inches(1.32), Inches(12.7), Inches(4.7), drop_rows,
+      col_widths=[Inches(2.7), Inches(4.7), Inches(5.3)], fsize=11)
+rect(s, Inches(0.3), Inches(6.25), Inches(12.7), Inches(0.85), LIGHT)
+rect(s, Inches(0.3), Inches(6.25), Inches(0.12), Inches(0.85), GREEN)
+textbox(s, Inches(0.6), Inches(6.34), Inches(12.2), Inches(0.7),
+        "The common thread: each dropped piece was infrastructure the runtime platform now owns. "
+        "We deleted plumbing, never business behaviour — all domain logic was translated and pinned by characterization tests.",
+        size=13, color=NAVY, bold=False, anchor=MSO_ANCHOR.MIDDLE)
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 18 — WRAP-UP
 # ═══════════════════════════════════════════════════════════════════════════
