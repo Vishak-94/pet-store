@@ -5,6 +5,7 @@ import com.petstore.catalog.domain.Item;
 import com.petstore.catalog.domain.Page;
 import com.petstore.catalog.domain.Product;
 import com.petstore.catalog.repository.CatalogRepository;
+import com.petstore.catalog.repository.CatalogSearchPort;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
@@ -13,18 +14,23 @@ import java.util.Optional;
 /**
  * Catalog business logic — replaces the legacy {@code @Stateless CatalogEJB}.
  *
- * <p>Depends only on the {@link CatalogRepository} port (Dependency Inversion);
- * it neither knows nor cares that the adapter is JPA/H2. Behaviour is a
- * pass-through preserving the legacy contract (locale-specific reads, empty
- * results instead of errors), so no business logic changes here.
+ * <p>Depends only on the ports (Dependency Inversion); it neither knows nor cares
+ * that the adapter is JPA/H2. Browse reads go through {@link CatalogRepository};
+ * keyword search goes through the segregated {@link CatalogSearchPort} — so search
+ * can be backed by a different store or lifted into its own service without touching
+ * the browse path. Behaviour is a pass-through preserving the legacy contract
+ * (locale-specific reads, empty results instead of errors), so no business logic
+ * changes here.
  */
 @Service
 public class CatalogService {
 
     private final CatalogRepository repository;
+    private final CatalogSearchPort search;
 
-    public CatalogService(CatalogRepository repository) {
+    public CatalogService(CatalogRepository repository, CatalogSearchPort search) {
         this.repository = repository;
+        this.search = search;
     }
 
     /**
@@ -115,6 +121,6 @@ public class CatalogService {
      * @return a {@link Page} of matching {@link Item} (never null). Read-only.
      */
     public Page searchItems(String query, int start, int size, Locale locale) {
-        return repository.searchItems(query, start, size, locale);
+        return search.searchItems(query, start, size, locale);
     }
 }

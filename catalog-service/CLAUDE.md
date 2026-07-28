@@ -33,15 +33,16 @@ com.petstore.catalog
 │   ├── Category, Product, Item    # plain immutable classes (legacy accessor quirks preserved)
 │   └── Page                       # pagination VO; Page.EMPTY_PAGE canonical empty result
 ├── repository/
-│   ├── CatalogRepository          # the PORT (interface) — 7 read methods
+│   ├── CatalogRepository          # the browse PORT (interface) — 6 read methods (category→product→item)
+│   ├── CatalogSearchPort          # the segregated search PORT — searchItems (ISP; see below)
 │   ├── jpa/                       # the DEFAULT adapter — @Profile("!mongo")
-│   │   ├── JpaCatalogRepository            # implements the port; entities → domain
+│   │   ├── JpaCatalogRepository            # implements BOTH ports (browse + search); entities → domain
 │   │   ├── SpringDataCatalogRepositories   # Spring Data interfaces + ItemSearchRepository{,Impl}
 │   │   ├── CategoryDetailEntity            # locale-split entities (@IdClass = (id, locale))
 │   │   ├── ProductBaseEntity / ProductDetailEntity
 │   │   └── ItemBaseEntity / ItemDetailEntity
 │   └── mongo/                     # the OPT-IN adapter — @Profile("mongo")
-│       ├── MongoCatalogRepository          # implements the port via MongoTemplate
+│       ├── MongoCatalogRepository          # implements BOTH ports via MongoTemplate
 │       ├── CategoryDocument / ProductDocument / ItemDocument  # embedded per-locale `details` map
 │       ├── MongoSchema                     # collection + field-name constants
 │       └── MongoCatalogSeeder              # data.sql equivalent (idempotent, @Profile("mongo"))
@@ -124,7 +125,9 @@ an item lives on `item.productid`. Localized rows never carry membership.
    **product name + category catid + item descn**; tokens are combined with OR.
    **Attributes (attr1..attr5) are NOT searched.** Blank / whitespace-only query →
    `EMPTY_PAGE`. The token count is dynamic, so the JPQL is assembled at runtime in
-   `ItemSearchRepositoryImpl`.
+   `ItemSearchRepositoryImpl`. Search lives on its **own port** (`CatalogSearchPort`),
+   segregated from the browse port so it can move to a dedicated engine / service
+   later without touching browse — `CatalogService` injects both ports.
 4. **Ordering by name (M1).** `getCategories` and `getProducts` order by localized
    `name` (`findByLocaleOrderByName`, `findByCategory ... order by pd.name`).
    `getItems`/`searchItems` order by `itemid`. Ordering affects which rows land on

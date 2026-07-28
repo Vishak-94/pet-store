@@ -18,17 +18,19 @@ Full detail:
 
 ## Layering (hexagonal — keep it)
 
-`web (CatalogApiController) → service (CatalogService) → port (CatalogRepository)
-→ adapter (JpaCatalogRepository + Spring Data + entities)`.
+`web (CatalogApiController) → service (CatalogService) → ports (CatalogRepository
+browse + CatalogSearchPort search) → adapter (JpaCatalogRepository + Spring Data + entities)`.
 
 - **Domain** (`domain/`): `Category`, `Product`, `Item`, `Page` — framework-free
   value objects (no JPA/Jackson). Preserve legacy accessor quirks (`Item.getAttribute()`
   = attr1, `getListCost()` = listPrice). Don't add annotations here.
-- **Port** (`repository/CatalogRepository`): the only seam the service knows.
-  `CatalogService` is a pure pass-through — put no business logic in it.
-- **Adapter** (`repository/jpa/`): `JpaCatalogRepository` maps entities → domain;
-  Spring Data interfaces + the search fragment live in `SpringDataCatalogRepositories`.
-  Entities are package-private and never leak.
+- **Ports** (`repository/`): the seams the service knows. `CatalogRepository` is the
+  browse port (category→product→item); `CatalogSearchPort` is the segregated keyword-search
+  port (ISP) so search can move to a dedicated engine / service without touching browse.
+  `CatalogService` injects both and is a pure pass-through — put no business logic in it.
+- **Adapter** (`repository/jpa/`): `JpaCatalogRepository` implements **both** ports and maps
+  entities → domain; Spring Data interfaces + the search fragment live in
+  `SpringDataCatalogRepositories`. Entities are package-private and never leak.
 - **Web** (`web/CatalogApiController`): maps domain → `CatalogDtos`, uses
   `CatalogServiceEndpoints` path constants. 404 on single-entity miss, 200-empty
   page otherwise.

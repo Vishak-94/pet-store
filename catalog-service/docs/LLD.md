@@ -9,9 +9,10 @@ future-Claude guide and invariants see `../CLAUDE.md`; parity rationale is in
 
 ## Overview
 
-The service is a strict **hexagonal** slice: a framework-free domain, a single
-persistence **port** (`CatalogRepository`), one JPA **adapter**, a pass-through
-application service, and a REST controller. It is read-only — no writes, no JMS,
+The service is a strict **hexagonal** slice: a framework-free domain, two
+persistence **ports** (`CatalogRepository` for browse, `CatalogSearchPort` for
+keyword search — Interface Segregation), one JPA **adapter** implementing both, a
+pass-through application service, and a REST controller. It is read-only — no writes, no JMS,
 no auth. The `catalog-service-client` module (built first, then depended on by
 `app`) single-sources the HTTP contract: the server maps the exact endpoint path
 constants the clients call and reuses the same DTO records.
@@ -87,6 +88,9 @@ classDiagram
         +getProducts(catId, start, count, locale) Page
         +getItem(id, locale) Optional~Item~
         +getItems(prodId, start, size, locale) Page
+    }
+    class CatalogSearchPort {
+        <<interface>>
         +searchItems(query, start, size, locale) Page
     }
 
@@ -212,7 +216,9 @@ classDiagram
     }
 
     CatalogService --> CatalogRepository : depends on (DIP)
+    CatalogService --> CatalogSearchPort : depends on (DIP)
     JpaCatalogRepository ..|> CatalogRepository
+    JpaCatalogRepository ..|> CatalogSearchPort
     JpaCatalogRepository --> CategoryDetailRepository
     JpaCatalogRepository --> ProductBaseRepository
     JpaCatalogRepository --> ProductDetailRepository

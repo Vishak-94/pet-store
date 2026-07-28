@@ -5,6 +5,7 @@ import com.petstore.catalog.domain.Item;
 import com.petstore.catalog.domain.Page;
 import com.petstore.catalog.domain.Product;
 import com.petstore.catalog.repository.CatalogRepository;
+import com.petstore.catalog.repository.CatalogSearchPort;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -41,7 +42,7 @@ import java.util.regex.Pattern;
  */
 @Repository
 @Profile("mongo")
-public class MongoCatalogRepository implements CatalogRepository {
+public class MongoCatalogRepository implements CatalogRepository, CatalogSearchPort {
 
     /** Default locale key when none is supplied — legacy columns are keyed like {@code en_US}. */
     private static final String DEFAULT_LOCALE_KEY = "en_US";

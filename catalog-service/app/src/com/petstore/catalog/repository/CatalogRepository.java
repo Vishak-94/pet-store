@@ -23,7 +23,10 @@ import java.util.Optional;
  *
  * <p>Dependency Inversion: {@code CatalogService} depends only on this
  * interface; the JPA adapter is injected by Spring. Interface Segregation: this
- * port is catalog-only — narrow and focused.
+ * port covers <b>browse</b> reads only (category → product → item lookups and
+ * listings); free-text keyword search lives on the separate {@link CatalogSearchPort}
+ * so search can evolve (a dedicated engine, or its own service) without touching the
+ * browse contract.
  */
 public interface CatalogRepository {
 
@@ -38,6 +41,4 @@ public interface CatalogRepository {
     Optional<Item> getItem(String itemId, Locale locale);
 
     Page getItems(String productId, int start, int size, Locale locale);
-
-    Page searchItems(String query, int start, int size, Locale locale);
 }

@@ -5,6 +5,7 @@ import com.petstore.catalog.domain.Item;
 import com.petstore.catalog.domain.Page;
 import com.petstore.catalog.domain.Product;
 import com.petstore.catalog.repository.CatalogRepository;
+import com.petstore.catalog.repository.CatalogSearchPort;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
@@ -24,11 +25,14 @@ import java.util.Optional;
  * {@link Page#EMPTY_PAGE} (never null, never an error).
  *
  * <p>Active on the <b>default</b> profile only ({@code @Profile("!mongo")}); under the
- * {@code mongo} profile the {@code repository.mongo} adapter serves the same port instead.
+ * {@code mongo} profile the {@code repository.mongo} adapter serves the same ports instead.
+ *
+ * <p>Implements both the browse port ({@link CatalogRepository}) and the segregated
+ * keyword-search port ({@link CatalogSearchPort}); the H2/JPA store backs both today.
  */
 @Repository
 @Profile("!mongo")
-public class JpaCatalogRepository implements CatalogRepository {
+public class JpaCatalogRepository implements CatalogRepository, CatalogSearchPort {
 
     private final CategoryDetailRepository categoryDetails;
     private final ProductBaseRepository productBase;
