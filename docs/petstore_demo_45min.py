@@ -1425,6 +1425,77 @@ for key, title, class_cap, schema_cap in LLD_MODULES:
                 os.path.join("..", key, "docs", key + "_schema.png"), tag="schema")
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 17b — LEGACY COMPONENT COVERAGE (does every legacy piece have an alternative?)
+# ═══════════════════════════════════════════════════════════════════════════
+s = slide()
+rect(s, 0, 0, SW, SH, NAVY)
+rect(s, 0, Inches(3.05), SW, Inches(0.045), AMBER)
+textbox(s, Inches(0.8), Inches(1.9), Inches(11.7), Inches(1.1),
+        "Legacy coverage — every component & app has a modern home",
+        size=32, color=WHITE, bold=True)
+textbox(s, Inches(0.8), Inches(3.25), Inches(11.7), Inches(1.6), [
+    ("18 shared components + 4 EAR apps + the WAF, mapped one-by-one to the migrated stack.",
+     {"size": 17, "color": SUB, "space_after": 10}),
+    ("Result: nothing dropped by accident. 14 FULL · 3 intentional PARTIAL (documented scope "
+     "decisions) · 5 deliberate deletions (framework replaces them) · 1 genuine feature gap.",
+     {"size": 15, "color": RGBColor(0x9D, 0xB4, 0xD4)}),
+], anchor=MSO_ANCHOR.TOP)
+
+# ── components table (18 shared components) ───────────────────────────────────
+s = slide()
+title_bar(s, "Coverage — shared components", "petstore1.3.1_02/src/components/ → migrated modules", tag="coverage")
+comp_rows = [
+    ["Legacy component", "Modern alternative", "Coverage"],
+    ["address", "customer Account + OPC ContactInfo / PurchaseOrderEvent", "FULL"],
+    ["asyncsender", "petstore-messaging MessagePublisher + OPC outbox", "FULL"],
+    ["cart", "cart-lib CartOperations + CartStore", "FULL"],
+    ["catalog", "catalog-service (ports + JPA/Mongo adapters)", "FULL"],
+    ["contactinfo", "OPC ContactInfo record + ContactInfoEmbeddable", "FULL"],
+    ["creditcard", "customer CreditCard VO", "PARTIAL"],
+    ["customer", "customer-service (consolidated aggregate)", "FULL"],
+    ["encodingfilter", "Spring Boot CharacterEncodingFilter (UTF-8)", "DROPPED"],
+    ["lineitem", "OPC OrderLine + WarehouseLineEntity", "PARTIAL"],
+    ["mailer", "notification-service MailSender + JMS listeners", "FULL"],
+    ["processmanager", "OPC OrderStatus + AdminService + outbox gateways", "FULL"],
+    ["purchaseorder", "OPC WarehouseOrder + PurchaseOrderEvent", "FULL"],
+    ["servicelocator", "Spring DI + MessagingConfig", "DROPPED"],
+    ["signon", "auth-service (BCrypt) + auth-client JWT filter", "FULL"],
+    ["supplierpo", "inventory-service FulfilmentService + FulfilledOrder", "PARTIAL"],
+    ["uidgen", "OrderIdGenerator + JPA @GeneratedValue", "FULL"],
+    ["util (Debug)", "SLF4J / Logback", "DROPPED"],
+    ["xmldocuments", "petstore-messaging JSON event records (Jackson)", "FULL"],
+]
+table(s, Inches(0.35), Inches(1.32), Inches(12.6), Inches(5.9), comp_rows,
+      col_widths=[Inches(2.4), Inches(8.0), Inches(2.2)], fsize=11)
+
+# ── apps + WAF table, plus the one real gap ───────────────────────────────────
+s = slide()
+title_bar(s, "Coverage — apps, WAF & the one real gap", "src/apps/ + the Web Application Framework", tag="coverage")
+app_rows = [
+    ["Legacy app / layer", "Modern module(s)", "Coverage"],
+    ["petstore (storefront + WAF)", "petstore-app-v1 + cart-lib + catalog/customer/auth", "FULL"],
+    ["opc (order-processing EAR)", "order-processing-service + notification + messaging", "FULL"],
+    ["admin (Swing rich client)", "admin-office-service (Thymeleaf, proxy→OPC) + auth", "FULL*"],
+    ["supplier", "inventory-service (FOR UPDATE lock, restock, re-drive)", "FULL"],
+    ["WAF + JSP (MainServlet, ScreenFlow, template.jsp)", "Spring MVC + Thymeleaf + Security + @ControllerAdvice", "DROPPED"],
+]
+table(s, Inches(0.35), Inches(1.32), Inches(12.6), Inches(2.5), app_rows,
+      col_widths=[Inches(3.9), Inches(6.5), Inches(2.2)], fsize=12)
+
+rect(s, Inches(0.35), Inches(4.15), Inches(12.6), Inches(2.75), LIGHT)
+rect(s, Inches(0.35), Inches(4.15), Inches(0.12), Inches(2.75), RED)
+textbox(s, Inches(0.7), Inches(4.3), Inches(12.0), Inches(2.5), [
+    ("The one genuine feature gap", {"size": 18, "bold": True, "color": RED, "space_after": 8}),
+    ("Admin getChartInfo — the pie/bar sales-revenue analytics UI.", {"size": 15, "bold": True, "space_after": 6}),
+    ("The data is present (SalesReport + AdminService.allOrders()); only the charting UI is out "
+     "of scope. Everything else maps cleanly.", {"size": 14, "color": GREY, "space_after": 10}),
+    ("* Swing/Java Web Start client itself is intentionally dropped (dead on modern JVMs) — the "
+     "browser UI replaces it. The 3 PARTIAL mappings (creditcard expiry-split helpers, per-line "
+     "lineNumber/quantityShipped, duplicated supplier-order aggregate) are all documented scope "
+     "decisions, not accidents.", {"size": 13, "color": GREY}),
+], anchor=MSO_ANCHOR.TOP)
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 18 — WRAP-UP
 # ═══════════════════════════════════════════════════════════════════════════
 s = slide()
