@@ -9,21 +9,22 @@
     <!-- Return the user to the originating screen after account creation (legacy behaviour). -->
     <input type="hidden" name="returnUrl" th:if="${returnUrl}" th:value="${returnUrl}"/>
     <h3>Login</h3>
-    <p><label>Username* <input type="text" name="userName" required/></label></p>
+    <p><label>Username* <input type="text" name="userName" th:value="${userName}" required/></label></p>
     <p><label>Password* <input type="password" name="password" required/></label></p>
     <h3>Contact &amp; Address</h3>
-    <p><label>First name <input type="text" name="givenName"/></label>
-       <label>Last name <input type="text" name="familyName"/></label></p>
-    <p><label>Email <input type="text" name="email"/></label></p>
-    <p><label>Street <input type="text" name="street1"/></label></p>
-    <p><label>City <input type="text" name="city"/></label>
-       <label>State <input type="text" name="state"/></label>
-       <label>Zip <input type="text" name="zipCode"/></label>
-       <label>Country <input type="text" name="country"/></label></p>
-    <h3>Credit Card (optional)</h3>
-    <p><label>Number <input type="text" name="cardNumber"/></label>
-       <label>Type <input type="text" name="cardType"/></label>
-       <label>Expiry <input type="text" name="cardExpiry" placeholder="MM/YY"/></label></p>
+    <p><label>First name* <input type="text" name="givenName" th:value="${givenName}" required/></label>
+       <label>Last name* <input type="text" name="familyName" th:value="${familyName}" required/></label></p>
+    <p><label>Email <input type="text" name="email" th:value="${email}"/></label>
+       <label>Telephone* <input type="text" name="telephone" th:value="${telephone}" required/></label></p>
+    <p><label>Street* <input type="text" name="street1" th:value="${street1}" required/></label></p>
+    <p><label>City* <input type="text" name="city" th:value="${city}" required/></label>
+       <label>State* <input type="text" name="state" th:value="${state}" required/></label>
+       <label>Zip* <input type="text" name="zipCode" th:value="${zipCode}" required/></label>
+       <label>Country <input type="text" name="country" th:value="${country}"/></label></p>
+    <h3>Credit Card</h3>
+    <p><label>Number* <input type="text" name="cardNumber" th:value="${cardNumber}" required/></label>
+       <label>Type* <input type="text" name="cardType" th:value="${cardType}" required/></label>
+       <label>Expiry* <input type="text" name="cardExpiry" th:value="${cardExpiry}" placeholder="MM/YY" required/></label></p>
     <p><button type="submit">Register</button></p>
 </form>
 </body>

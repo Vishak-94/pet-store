@@ -110,6 +110,7 @@ public class RegistrationController {
                            @RequestParam(required = false) String givenName,
                            @RequestParam(required = false) String familyName,
                            @RequestParam(required = false) String email,
+                           @RequestParam(required = false) String telephone,
                            @RequestParam(required = false) String street1,
                            @RequestParam(required = false) String city,
                            @RequestParam(required = false) String state,
@@ -121,7 +122,7 @@ public class RegistrationController {
                            @RequestParam(required = false) String returnUrl,
                            Model model) {
         var account = new com.petstore.customer.client.CustomerDtos.AccountDto(
-                givenName, familyName, email, null, street1, null, city, state, zipCode, country);
+                givenName, familyName, email, telephone, street1, null, city, state, zipCode, country);
         var card = (cardNumber == null || cardNumber.isBlank()) ? null
                 : new com.petstore.customer.client.CustomerDtos.CardDto(cardNumber, cardType, cardExpiry);
         var request = new com.petstore.customer.client.CustomerDtos.RegisterRequest(
@@ -130,17 +131,16 @@ public class RegistrationController {
             customerClient.register(request);
             log.info("Registered {} via customer-service", userName);
         } catch (org.springframework.web.client.HttpClientErrorException.Conflict e) {
-            model.addAttribute(ATTR_ERROR, MSG_USERNAME_TAKEN);
-            model.addAttribute(ATTR_RETURN_URL, returnUrl);
-            return VIEW_REGISTER;
+            return rerenderWithError(model, MSG_USERNAME_TAKEN, returnUrl, userName, givenName, familyName,
+                    email, telephone, street1, city, state, zipCode, country, cardNumber, cardType, cardExpiry);
         } catch (org.springframework.web.client.HttpClientErrorException.BadRequest e) {
-            model.addAttribute(ATTR_ERROR, MSG_INVALID_DETAILS);
-            model.addAttribute(ATTR_RETURN_URL, returnUrl);
-            return VIEW_REGISTER;
+            // Surface the server's specific validation detail (e.g. which fields are missing)
+            // instead of the generic message, so the shopper knows exactly what to fix.
+            return rerenderWithError(model, badRequestMessage(e), returnUrl, userName, givenName, familyName,
+                    email, telephone, street1, city, state, zipCode, country, cardNumber, cardType, cardExpiry);
         } catch (org.springframework.web.client.RestClientException e) {
-            model.addAttribute(ATTR_ERROR, MSG_SERVICE_UNAVAILABLE);
-            model.addAttribute(ATTR_RETURN_URL, returnUrl);
-            return VIEW_REGISTER;
+            return rerenderWithError(model, MSG_SERVICE_UNAVAILABLE, returnUrl, userName, givenName, familyName,
+                    email, telephone, street1, city, state, zipCode, country, cardNumber, cardType, cardExpiry);
         }
         // Return to the originating screen if we captured one (legacy behaviour),
         // else fall back to the login page.
@@ -148,6 +148,53 @@ public class RegistrationController {
             return "redirect:" + returnUrl;
         }
         return REDIRECT_LOGIN_REGISTERED;
+    }
+
+    /**
+     * Re-render the sign-up form after a failed submission: show {@code message} and put back
+     * every value the shopper typed (except the password, which is never echoed) so they don't
+     * have to re-enter the whole form to fix one field.
+     */
+    private String rerenderWithError(Model model, String message, String returnUrl,
+                                     String userName, String givenName, String familyName, String email,
+                                     String telephone, String street1, String city, String state,
+                                     String zipCode, String country,
+                                     String cardNumber, String cardType, String cardExpiry) {
+        model.addAttribute(ATTR_ERROR, message);
+        model.addAttribute(ATTR_RETURN_URL, returnUrl);
+        model.addAttribute("userName", userName);
+        model.addAttribute("givenName", givenName);
+        model.addAttribute("familyName", familyName);
+        model.addAttribute("email", email);
+        model.addAttribute("telephone", telephone);
+        model.addAttribute("street1", street1);
+        model.addAttribute("city", city);
+        model.addAttribute("state", state);
+        model.addAttribute("zipCode", zipCode);
+        model.addAttribute("country", country);
+        model.addAttribute("cardNumber", cardNumber);
+        model.addAttribute("cardType", cardType);
+        model.addAttribute("cardExpiry", cardExpiry);
+        return VIEW_REGISTER;
+    }
+
+    /**
+     * Pull the human-readable {@code detail} out of customer-service's 400 problem+json body
+     * (e.g. "Missing required registration fields: account.telephone") so we can show the shopper
+     * exactly what to fix. Falls back to the generic message if the body can't be parsed.
+     */
+    private static String badRequestMessage(org.springframework.web.client.HttpClientErrorException e) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode body =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(e.getResponseBodyAsString());
+            com.fasterxml.jackson.databind.JsonNode detail = body.get("detail");
+            if (detail != null && !detail.asText().isBlank()) {
+                return detail.asText();
+            }
+        } catch (Exception ignored) {
+            // fall through to the generic message
+        }
+        return MSG_INVALID_DETAILS;
     }
 
     /** Only allow same-app relative redirects (guards against open-redirect). */
