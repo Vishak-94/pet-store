@@ -6,6 +6,29 @@ standalone container — the storefront does not host it. Package root `com.pets
 3.3.5 / Java 21. See the repo `petstore-dev` skill for shared conventions and
 [`../CLAUDE.md`](../CLAUDE.md) for the invariant list.
 
+## Class & schema diagrams
+
+Generated from the real source by [`petstore-app-v1_lld.py`](petstore-app-v1_lld.py) on the shared
+[`docs/lld_style.py`](../../docs/lld_style.py) house-style library. Re-run with
+`cd petstore-app-v1/docs && python3 petstore-app-v1_lld.py`.
+
+- **Class / layering** — [`petstore-app-v1_class.png`](petstore-app-v1_class.png) ·
+  [`petstore-app-v1_class.svg`](petstore-app-v1_class.svg): the layered storefront — HTML `@Controller`s
+  and JSON `@RestController`s over the application services (`OrderService`, `CartService`,
+  `IdempotencyKeyStore`, `OrderKeyCipher`, `OrderIdGenerator`), the framework-free view models/forms,
+  the delegated-auth + cart-id security layer, and the config/resilience wiring. It makes the **reuse**
+  seam obvious: five imported client-SDK jars + the in-process `cart-lib` + the shared
+  `petstore-messaging` contract type, all composed through `HttpClientConfig`/`CartConfig` over one
+  `ResilientRestClient`.
+- **Data model (no DB)** — [`petstore-app-v1_schema.png`](petstore-app-v1_schema.png) ·
+  [`petstore-app-v1_schema.svg`](petstore-app-v1_schema.svg): this module persists **nothing** in a
+  database. The diagram shows the owned in-memory / session state (the `cartId`/`JSESSIONID`/`lang`
+  cookies, cart-lib's `CartEntry`, the `IdempotencyKeyStore.Reservation`, and the AES/GCM `orderKey`
+  token) alongside the DTO/wire contracts it composes — the outbound `CheckoutRequest` (→ OPC intake),
+  the customer `RegisterRequest`/`AccountDto`/`CardDto`, and the read shapes (`CartView`,
+  `LoginResult`, `CustomerView`, the stock read) — with the data-flow from session state into those
+  contracts at checkout.
+
 ## 1. Responsibilities
 
 - Render the storefront (Thymeleaf): catalog browse/search, cart, checkout, login, registration,
@@ -420,3 +443,63 @@ falls through to `anyRequest().permitAll()`. CSRF is disabled for `/checkout`, `
   credential (forwarded as Bearer), stable `userId` on `getDetails()`.
 - **i18n.** Locales `en_US`/`ja_JP`/`zh_CN` only; cookie `lang` + `?lang=` interceptor; UI text in
   `messages_*.properties`; catalog text localised by catalog-service. Add new keys to all bundles.
+
+## 6. Reusability & extensibility
+
+This module is almost entirely an **orchestration + presentation** shell: its strongest design
+property is that it *reuses* shared building blocks rather than owning domain logic, and every
+integration point is a named seam you can extend without touching the shell.
+
+### What is reused (and by whom)
+
+- **Five imported client-SDK jars** — `CatalogServiceClient`, `CustomerServiceClient`, `AuthClient`,
+  `InventoryClient` and `OrderProcessingClient` are thin typed clients published by the owning
+  services and pulled in as jars. The storefront never speaks HTTP by hand or hardcodes a URL: it
+  consumes each SDK's method surface (`getItem`, `getCustomer`, `login`, `stockFor`, `checkout`) and
+  each SDK's DTOs (`CheckoutRequest`/`LineDto`/`ContactInfoDto`, `RegisterRequest`/`AccountDto`/`CardDto`,
+  `LoginResult`, `CustomerView`). The contract is single-sourced in the SDK, so a compatible server
+  change flows in by bumping the jar.
+- **`cart-lib` (in-process library)** — `CartService` is a thin adapter over the embeddable
+  `CartOperations`/`CartStore`; all cart behaviour (set-to-1 add, qty≤0 removes, dangling-item skip,
+  distinct-line count, list-price subtotal, 15-min sliding TTL) lives in the library and is reused
+  verbatim. `CartService`'s method surface is deliberately unchanged so `CartController`,
+  `OrderService`, `StorefrontController` and `GlobalModelAdvice` need no edits.
+- **`petstore-messaging` shared contract** — `ContactInfoForm.toContactInfo()` builds the shared
+  `PurchaseOrderEvent.ContactInfo` record, reusing the fleet-wide contact shape instead of a
+  storefront-local copy.
+- **`ResilientRestClient` factory** — one factory (`forService(name, baseUrl)`) applies the same
+  circuit-breaker (all methods) + GET-only bounded-retry + timeouts to *every* SDK bean built in
+  `HttpClientConfig`. Resilience is reused across all five downstreams from a single place, kept out
+  of the thin SDK jars.
+- **`AuthenticatedUser.userId(auth)`** — the single DRY seam that decodes the "stable userId lives on
+  `Authentication.getDetails()`" contract; reused by `StorefrontController`, `CheckoutController`,
+  `PreCheckoutController`, `CustomerController` and `SignOnLocaleSuccessHandler` instead of copy-pasting
+  the `getDetails() instanceof String ? … : getName()` idiom.
+- **`CatalogViewMapper`** — the one place SDK DTOs are mapped to the framework-free view models
+  (`Category`/`Product`/`Item`) the Thymeleaf templates read via JavaBean getters.
+
+### How it is extended safely
+
+- **Point a downstream at a new host/env** — no code change: `ServiceEndpoints`
+  (`@ConfigurationProperties("services")`) binds each base URL from `application.yml`, overridable per
+  profile/env var (`CUSTOMER_SERVICE_URL`, `ORDER_PROCESSING_SERVICE_URL`, …). `HttpClientConfig`
+  falls back to a dev default when a base-url is blank.
+- **Add a new downstream service** — add a `Service` field on `ServiceEndpoints`, add one `@Bean` in
+  `HttpClientConfig` wrapping the SDK over `ResilientRestClient.forService(...)`, and inject it where
+  needed. `StockController`/`InventoryClient` is the pattern to copy.
+- **Add a checkout field** — the outbound `CheckoutRequest`/`ContactInfoDto` are additive DTOs
+  (nullable, appended-last), so new fields don't break older OPC deployments; collect it on
+  `ContactInfoForm` (add a `@Size` cap + a `missingRequiredFields` entry if required) and map it in
+  `toContactInfo()`/`OrderService.toDto()`.
+- **Swap the checkout token cipher / reservation store** — `OrderKeyCipher` and `IdempotencyKeyStore`
+  are self-contained `@Component`s behind method surfaces (`encrypt`/`decrypt`,
+  `reserve`/`consumeIfMatches`); the in-memory reservation map can be replaced with a shared store to
+  scale out without touching the controllers (see `DECISIONS.md`).
+- **Add a locale** — extend `WebConfig.SUPPORTED` and add a `messages_<locale>.properties` bundle; the
+  cookie resolver, `?lang=` interceptor, `GlobalModelAdvice.langSwitchBase` and
+  `SignOnLocaleSuccessHandler` all read the single `WebConfig.LOCALE_PARAM` contract.
+- **Change auth encoding** — because identity decoding is centralised in `AuthenticatedUser`, altering
+  how the userId is carried on the `Authentication` is a one-file change, not five.
+- **Add a public/authenticated route** — extend the matcher arrays in `SecurityConfig`
+  (`PUBLIC_MATCHERS`, `AUTHENTICATED_MATCHERS`, `CSRF_EXEMPT_MATCHERS`); auth stays fully delegated
+  (`CustomerServiceAuthProvider` → `AuthClient`), so no local credential store is introduced.

@@ -25,6 +25,68 @@ minted by auth-service). It is a hexagonal (ports & adapters) service:
 verify-only (bundled RS256 public key via `AuthJwtFilter`) and provisions credentials at
 registration. There is no `app_user` table here.
 
+## Class & schema diagrams
+
+Rendered from the real source by `docs/customer-service_lld.py` (shared house style in
+`../../docs/lld_style.py`); regenerate with `cd docs && python3 customer-service_lld.py`.
+
+| Diagram | Files | What it shows |
+|---------|-------|---------------|
+| Class | [`customer-service_class.png`](customer-service_class.png) / [`.svg`](customer-service_class.svg) | Hexagonal layering — Web (`CustomerController`, `RestExceptionHandler`) → Service (`CustomerService`) → framework-free Domain (`Customer`/`Account`/`Profile`/`CreditCard`), the `CustomerRepository` port with its `JpaCustomerRepository`/`CustomerEntity` adapter, the reused `customer-service-client` SDK, and the shared `auth-client` library (`AuthClient`, `AuthJwtFilter`, `JwtVerifier`, `AuthClaims`). |
+| Schema | [`customer-service_schema.png`](customer-service_schema.png) / [`.svg`](customer-service_schema.svg) | The single flattened `customer` table (owned, H2) with column types/defaults, the externally-owned `app_user` credential store it shares `user_id` with, and the client-SDK wire DTOs (`RegisterRequest`/`AccountDto`/`ProfileDto`/`CardDto` → row; row → masked `CustomerView`). |
+
+The class PNG makes the two key seams visually obvious: the **port/adapter** seam
+(`CustomerRepository` interface realized by `JpaCustomerRepository`, an `impl` edge) and the
+**single-sourced contract** seam (`CustomerController` `depends` on the client SDK's
+`CustomerServiceEndpoints` + `CustomerDtos`, the same types callers use).
+
+## Reusability & extensibility
+
+**What is reused**
+
+- **`customer-service-client` SDK (single-sourced contract).** `CustomerServiceEndpoints`
+  (paths + JSON field names) and `CustomerDtos` (`RegisterRequest`, `AccountDto`,
+  `ProfileDto`, `CardDto`, `CustomerView`, `AuthResult`) are defined once in the `client/`
+  module and imported by *both* the server (`CustomerController` references
+  `CustomerServiceEndpoints.REGISTER`, `.CUSTOMER`, `.ACCOUNT`, … and binds
+  `CustomerDtos.*` request bodies) and every caller. Server and clients cannot drift on a
+  path or a JSON key. The SDK depends only on spring-web + jakarta.validation (no Boot
+  starter), so it stays cheap to import.
+- **Shared `auth-client` library** (reused by every service): `CustomerService` calls
+  `AuthClient.provision(userName, password, "USER")`; `SecurityConfig` wires
+  `AuthJwtFilter` + `JwtVerifier` (RS256 verify with `AuthPublicKey.bundled()`);
+  `CustomerController.requireOwnerOrAdmin` reads the stable id from the `AuthClaims` the
+  filter placed on the `Authentication`. customer-service writes zero auth code of its own.
+- **Domain reuse via the aggregate.** `CustomerService.update{Account,Profile,CreditCard}`
+  all funnel through the private `require(userId)` helper and rebuild the immutable
+  `Customer`, replacing exactly one slice and preserving the other two — one code path, no
+  duplicated fetch-then-merge logic. `Profile.defaults()` centralises the legacy default
+  preferences reused at every registration.
+- **`RestClient` with bounded timeouts** in `CustomerServiceClient.timeoutFactory()` — one
+  factory reused by all six SDK calls so no caller thread can hang on a slow service.
+
+**How to extend safely (concrete seams)**
+
+- **New persistence backend behind the port.** Add a class implementing
+  `CustomerRepository` (e.g. a Mongo or in-memory adapter) and annotate it so it wins the
+  bean; `CustomerService` is unchanged because it depends on the interface, not
+  `JpaCustomerRepository`. This is the primary SPI seam (mirrors the repo-wide `@Profile`
+  adapter-swap pattern used elsewhere).
+- **New profile-scoped behaviour via `@Profile`.** `SecurityConfig.filterChain` already
+  branches on `env.acceptsProfiles("dev")` to open `/h2-console/**` only in dev — the same
+  mechanism extends to new environment-specific wiring without editing the base config.
+- **New endpoint / operation.** Add the path constant to `CustomerServiceEndpoints`, the
+  DTO record to `CustomerDtos`, a handler on `CustomerController`, and a method on
+  `CustomerServiceClient` — the contract stays single-sourced and callers pick it up by
+  bumping the SDK version.
+- **Additive-safe DTOs.** DTOs are Java records; adding an optional field (e.g. a new
+  account attribute) is backward compatible for existing JSON clients. Map the new field in
+  `CustomerController.toAccount`/`toView` and `CustomerEntity.from/toDomain`, and add the
+  column to `schema.sql`.
+- **New error mapping.** Add an `@ExceptionHandler` to `RestExceptionHandler`; it reuses the
+  shared `body(...)` builder so the new response keeps the uniform
+  `{status, error, detail, correlationId}` shape automatically.
+
 ## Class diagram — server (domain + application + adapters)
 
 ```mermaid

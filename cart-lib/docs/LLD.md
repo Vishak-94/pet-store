@@ -10,6 +10,21 @@ beans and runs it in the same JVM. cart-lib is a faithful port of the legacy
 > future-Claude guidance in [`../CLAUDE.md`](../CLAUDE.md). Parity baseline:
 > [`../../docs/PARITY_AUDIT.md`](../../docs/PARITY_AUDIT.md); ADRs: [`../../DECISIONS.md`](../../DECISIONS.md).
 
+## Class & schema diagrams
+
+Generated from the real source by [`cart-lib_lld.py`](cart-lib_lld.py) (imports the shared
+house-style lib `../../docs/lld_style.py`). Regenerate with `cd cart-lib/docs && python3 cart-lib_lld.py`.
+
+- **Class diagram** — ![class diagram](cart-lib_class.png) — [PNG](cart-lib_class.png) ·
+  [SVG](cart-lib_class.svg): the framework-free library core (`CartOperations`, `CartStore` +
+  its `CartEntry`, `CartDtos`), the reused `catalog-service-client` SDK seam, and how
+  petstore-app-v1 (`CartConfig`, `CartService`) wires and consumes it.
+- **Data-model / wire-contract diagram** — ![schema diagram](cart-lib_schema.png) —
+  [PNG](cart-lib_schema.png) · [SVG](cart-lib_schema.svg): cart-lib has **no database**, so this
+  shows the in-memory model (`carts` map → `CartEntry` → `itemId→qty` lines with the sliding
+  15-min TTL), the `CartView`/`CartItemView` wire records, and the qty≤0-removes / cap-999 /
+  skip-dangling invariants.
+
 ## Overview
 
 Three classes in package `com.petstore.cart`:
@@ -190,3 +205,53 @@ Store-level helpers: `withCart` (atomic per-cart mutation + TTL refresh), `snaps
   The sweeper is a plain daemon thread stopped via `close()` (host `destroyMethod`).
 - **Concurrency.** `carts` is a `ConcurrentHashMap`; mutations synchronize on the per-cart
   `CartEntry`, so each cart's updates are atomic.
+
+## Reusability & extensibility
+
+**What is reused (and by whom).**
+
+- **cart-lib is itself the reusable unit.** It ships as a plain jar (`com.petstore:cart-lib:1.0.0`,
+  `install`ed to `~/.m2`) and is embedded by its single consumer, **petstore-app-v1**, which wires
+  `CartStore` + `CartOperations` as Spring beans in `com.petstore.cart.config.CartConfig` and adapts
+  them in `CartService`. Because the library is **framework-free** (no Spring/JPA/Jackson
+  annotations anywhere in `com.petstore.cart`), any other JVM host — a future checkout service, a
+  test harness, a CLI — can reuse the exact same cart semantics just by constructing
+  `new CartOperations(new CartStore(), catalogClient)`. There is no hidden container coupling to
+  unwind.
+- **The `catalog-service-client` SDK is reused, not reimplemented.** `CartOperations` depends only
+  on the `CatalogServiceClient` interface surface (`getItem(itemId, locale)`) and the `ItemDto`
+  record from the shared SDK jar — the same SDK petstore-app-v1's `CatalogController` uses. cart-lib
+  owns no URLs, no JSON shapes, and no HTTP code; price/name resolution rides entirely on the SDK
+  contract. This is the reuse seam made visible in the class diagram (`CartOperations → CatalogServiceClient → ItemDto`).
+- **`CartView` / `CartItemView` are the reused wire contract.** These records are the single shape
+  every caller consumes; `CartService.toCartItems` maps them into the host's own `CartItem` view
+  model without cart-lib knowing anything about the host's presentation types.
+- **`CartStore` generalises state access via one higher-order method.** `withCart(cartId, Function<Map,T> op)`
+  is the reused primitive: `snapshot`, `addItem`, `setQuantity`, and `deleteItem` are all expressed
+  as lambdas over it, so per-cart atomicity and sliding-TTL refresh are implemented **once** and
+  inherited by every operation.
+
+**How it is extended safely.**
+
+- **New cart operation:** add a method to `CartOperations` expressed as a `withCart(...)` lambda
+  (mutate the `Map<String,Integer>`) and return `view(cartId)`. The store, TTL, concurrency, and
+  cap logic (`capQuantity`) are reused unchanged — no new state plumbing.
+- **New field on the wire contract:** because `CartView`/`CartItemView` are Java records mapped by
+  component name, **adding** a component (e.g. a per-line discount) is backward-compatible for
+  Jackson consumers; existing callers ignore it. Removing/renaming a component is a breaking change.
+- **Swapping catalog resolution:** any implementation satisfying the `CatalogServiceClient` surface
+  can be injected via the `CartOperations(store, catalog)` constructor — the tests do exactly this
+  with a Mockito mock (and even a throwing client to prove `count()` never calls catalog). A caching
+  or alternate-transport catalog client would drop in with no library edit.
+- **Tuning lifetime without code:** the sliding-TTL and sweep cadence are constructor args
+  (`CartStore(ttlMinutes, sweepIntervalSeconds)`); the host externalises them as
+  `cart.ttl-minutes` / `cart.sweep-interval-seconds` (defaults 15 / 60 — the parity values). No new
+  adapter is needed to retune eviction.
+- **Alternative state backing (extension boundary, not yet built):** today `CartStore` is a single
+  concrete in-memory class (there is deliberately **no** persistence port here — cart is
+  session-local, like the legacy `HttpSession`). If a distributed/shared backing (e.g. Redis) were
+  ever required, the clean seam is to extract a small store interface from `CartStore`'s public
+  surface (`withCart` / `snapshot` / `remove` / `size` / `close`) and inject an implementation into
+  `CartOperations` — the business logic and DTOs would not change. This mirrors the port/adapter
+  `@Profile` swap used elsewhere in the fleet (see catalog-service / OPC `OrderStore`), and is called
+  out here so the extension point is explicit rather than assumed.
