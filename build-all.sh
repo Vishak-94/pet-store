@@ -21,10 +21,11 @@ echo "Using JAVA_HOME=$JAVA_HOME"
 
 # 1) Shared libraries + multi-module parents → install to ~/.m2 (order matters:
 #    catalog-service-client is needed by cart-lib; auth-client by the services).
-#    inventory-service is INSTALLED (not just packaged) because it now publishes an importable
-#    client SDK jar (inventory-service-client) that petstore-app-v1 depends on; installing the
-#    aggregator builds+installs both the client jar and the app.
-LIBS=(petstore-messaging auth-service catalog-service customer-service cart-lib inventory-service)
+#    inventory-service and order-processing-service are INSTALLED (not just packaged) because each
+#    publishes an importable client SDK jar (inventory-service-client, order-processing-client) that
+#    petstore-app-v1 depends on; installing the aggregator builds+installs both the client jar and
+#    the app. (They must precede petstore-app-v1 in the APPS step below.)
+LIBS=(petstore-messaging auth-service catalog-service customer-service cart-lib inventory-service order-processing-service)
 for m in "${LIBS[@]}"; do
   echo "==> install $m"
   (cd "$m" && mvn -q clean install -DskipTests)
