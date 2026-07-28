@@ -1366,6 +1366,65 @@ bullets(s, Inches(7.5), Inches(2.25), Inches(5.1), Inches(3.7), [
 ])
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 17b — PER-MODULE LLD & SCHEMA DIAGRAMS
+# One divider + a class-diagram slide and a schema/data-model slide per module.
+# Images are the per-module diagrams rendered by <module>/docs/<module>_lld.py
+# (shared house style docs/lld_style.py); paths are relative to this docs/ BASE.
+# ═══════════════════════════════════════════════════════════════════════════
+s = slide()
+rect(s, 0, 0, SW, SH, NAVY)
+rect(s, 0, Inches(3.5), SW, Inches(0.06), AMBER)
+textbox(s, Inches(0.8), Inches(2.5), Inches(11.7), Inches(1.0),
+        "Low-Level Design — Every Module", size=40, color=WHITE, bold=True)
+textbox(s, Inches(0.8), Inches(3.75), Inches(11.7), Inches(1.6), [
+    ("Class design + schema for all 10 modules — one consistent house style (docs/lld_style.py).",
+     {"size": 17, "color": SUB, "space_after": 10}),
+    ("Read the colour: web · service · framework-free domain · PORT (interface seam) · adapter · "
+     "entity · client SDK · config · messaging. Dashed hollow arrow = realizes a port (the "
+     "extensibility seam); dotted green = async JMS.", {"size": 14, "color": RGBColor(0x9D, 0xB4, 0xD4)}),
+], anchor=MSO_ANCHOR.TOP)
+
+# (module_key, human title, one-line class caption, one-line schema caption)
+LLD_MODULES = [
+    ("petstore-messaging", "petstore-messaging — shared JMS library",
+     "One envelope + event/destination registry imported by all 8 services",
+     "Event envelope (EventMeta) + 5 event records + destination map"),
+    ("cart-lib", "cart-lib — embeddable cart library",
+     "Framework-free CartOperations over CartStore; reused by the storefront",
+     "In-memory cart data model + CartView/CartItemView wire records"),
+    ("auth-service", "auth-service — JWT issuer / verifier",
+     "RS256 issue + verify; JwtVerifier reused via the client SDK",
+     "account table + RSA key model"),
+    ("catalog-service", "catalog-service — read catalog (ISP)",
+     "Two ports (browse + search) with two @Profile adapters (H2 / Mongo)",
+     "Locale-split base + _details relational schema"),
+    ("customer-service", "customer-service — profile CRUD",
+     "CorrelationIdFilter + service over a repository port; client SDK",
+     "customer schema"),
+    ("inventory-service", "inventory-service — stock reserve / fulfil",
+     "Consumes OrderApproved, all-or-nothing reserve, publishes Invoice",
+     "inventory + processed_event (dedup) schema"),
+    ("order-processing-service", "order-processing-service — workflow owner",
+     "Hexagonal + dual @Profile stores + transactional outbox + gateways",
+     "H2/JPA + Mongo variant behind one port + outbox event contract"),
+    ("notification-service", "notification-service — JMS observer",
+     "Pure listeners → Mailer; no DB, no writes",
+     "The events it consumes + listener → mailer flow"),
+    ("admin-office-service", "admin-office-service — back-office UI",
+     "Thymeleaf UI aggregating other services via their client SDKs",
+     "Client-SDK aggregation + view model"),
+    ("petstore-app-v1", "petstore-app-v1 — storefront UI",
+     "Composes cart-lib + 4 client SDKs behind Thymeleaf controllers",
+     "Session/compose data model + the SDKs it reuses"),
+]
+
+for key, title, class_cap, schema_cap in LLD_MODULES:
+    image_slide(title + " — class design", class_cap,
+                os.path.join("..", key, "docs", key + "_class.png"), tag="LLD")
+    image_slide(title + " — schema / data model", schema_cap,
+                os.path.join("..", key, "docs", key + "_schema.png"), tag="schema")
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 18 — WRAP-UP
 # ═══════════════════════════════════════════════════════════════════════════
 s = slide()
